@@ -1,0 +1,27 @@
+name: 功能请求
+description: 新增合同规则、校验维度或 omp 角色/技能
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的失效模式
+      description: 描述一个**具体的**不可验证/不可复现场景，而不是抽象需求
+      placeholder: 子agent 报告 completed 但 logs/ 里只有一行摘要，无法回溯
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提议的检查或机制
+      description: 说明它应在哪一层生效（CLI 合同 / hook / agent 提示词 / CI）
+    validations:
+      required: true
+  - type: textarea
+    id: cost
+    attributes:
+      label: 代价与误报风险
+      description: 会不会误伤合法工作流？如何降低噪声？
+    validations:
+      required: false

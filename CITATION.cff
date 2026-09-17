@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "引用本仓库或其产出时，请使用以下元数据。"
+title: "ScienceRearch: 可验证性优先的科研工作流脚手架"
+abstract: >-
+  以实验预注册、证据留痕、状态机与合同校验为核心的科研工作流脚手架，
+  并配套 Oh My Pi 子agent 编排设施（研究角色、实验协议技能、数据护栏 hook、独立复核 advisor）。
+  目标是把 agent 参与的研究产出约束成可被机器校验的证据链。
+authors:
+  - name: "ScienceRearch contributors"
+type: software
+license: MIT
+repository-code: "https://github.com/ckyOL/scienceRearch"
+url: "https://github.com/ckyOL/scienceRearch"
+version: 0.1.0
+date-released: "2026-09-17"
+keywords:
+  - reproducible research
+  - preregistration
+  - AI scientist
+  - multi-agent
+  - experiment tracking

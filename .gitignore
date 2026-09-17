@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- uv ---
+# uv.lock is committed on purpose; the venv is not.
+.venv*/
+
+# --- 研究数据 ---
+# 原始数据通常体积大且可另行获取：不入库。派生物可重建，同样不入库。
+data/raw/**
+!data/raw/.gitkeep
+data/interim/
+data/processed/
+
+# 大体积实验日志（默认策略是提交日志作为证据；超过 10MB 的请改用外部存储并在
+# experiment.json.artifacts 中登记 hash）。若某实验日志确实过大，逐条取消下方注释。
+# experiments/*/logs/*.log
+
+# --- omp 本地状态 ---
+.omp/local/
+*.jsonl
+
+# --- 编辑器 / 系统 ---
+.DS_Store
+.idea/
+.vscode/
+*.swp

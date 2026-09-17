@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 实验协议与合同说明
+    url: https://github.com/ckyOL/scienceRearch/blob/main/docs/experiment-protocol.md
+    about: 提交实验类 issue 前请先读实验协议（预注册、seed、日志、状态推进）。

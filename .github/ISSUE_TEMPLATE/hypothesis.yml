@@ -1,0 +1,64 @@
+name: 预注册假设
+description: 在跑任何实验之前登记一条假设与其判据（判据先行，结果后置）
+title: "[hypothesis] "
+labels: ["experiment"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本模板对应 `scirearch new` 的必填字段。**判据必须先于结果确定**；
+        结果出现后再修改判据会被 `scirearch verify` 判定为预注册违规。
+  - type: input
+    id: slug
+    attributes:
+      label: 短标识
+      description: 小写字母数字与连字符，用于目录名（experiments/exp-NNNN-<slug>）
+      placeholder: fixed-seed-baseline
+    validations:
+      required: true
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: 假设
+      description: 一句话，可被证伪；不要写"探索 X"这类无判据的目标
+      placeholder: 固定 seed 下，基线的 5 次运行准确率标准差小于 0.01
+    validations:
+      required: true
+  - type: input
+    id: metric
+    attributes:
+      label: 指标
+      description: 用来裁决的单一可计算量
+      placeholder: std(accuracy) over 5 seeds
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: 判据（每行一条）
+      description: 支持/反驳的阈值条件，必须能在 metrics.json 上机械判定
+      placeholder: |
+        std < 0.01
+        无 NaN
+    validations:
+      required: true
+  - type: input
+    id: seed
+    attributes:
+      label: 随机种子
+      description: 留空表示待定，但终态前必须补上
+      placeholder: "1729"
+  - type: textarea
+    id: falsification
+    attributes:
+      label: 证伪路径
+      description: 出现什么结果你会放弃该假设（防止事后解释）
+    validations:
+      required: true
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: 确认
+      options:
+        - label: 我理解结果必须附带可重跑命令、seed 与非空原始日志
+          required: true

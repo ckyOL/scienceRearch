@@ -1,0 +1,9 @@
+# 安装：pre-commit install
+# 完整闸门（含测试与实验合同校验）用 `make check`，这里只做最快的静态检查。
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

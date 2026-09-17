@@ -1,0 +1,31 @@
+# Oh My Pi 项目配置（`omp` 读取）
+# 角色别名集中在此处；agent 文件只引用 @别名，换模型不必改 agent 定义。
+
+modelRoles:
+  default: anthropic/claude-sonnet-4-5:medium
+  smol: openai/gpt-5-mini
+  worker: openai/gpt-5.4:medium # experimenter / replicator
+  review: anthropic/claude-sonnet-4-5:high # critic / 复核类
+  advisor: anthropic/claude-sonnet-4-5:high # 旁路在线复核
+
+task:
+  maxConcurrency: 8 # 并发实验数：按 CPU/GPU/配额收敛，不要吃满
+  maxRecursionDepth: 2
+  isolation:
+    enabled: true # 并行实验的硬前提：isolated spawn 走独立工作区
+  softRequestBudget: 200
+  # 需要临时封禁某角色时列出名字，例如 [replicator]
+  disabledAgents: []
+
+advisor:
+  enabled: true
+  syncBacklog: 1 # 每段 delta 后等复核追上（上限 30s），科研场景值得这个延迟
+
+memory:
+  backend: local # 跨会话沉淀项目结论与教训；子agent 不参与该管线
+
+autolearn:
+  enabled: true # 允许 learn 工具把教训写入 learned.md
+
+checkpoint:
+  enabled: true # 探索式侦察前打点，便于 rewind 收束上下文（注意：不含文件系统）

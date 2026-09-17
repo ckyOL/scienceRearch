@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scirearch"
+version = "0.1.0"
+description = "可验证性优先的科研工作流脚手架：实验预注册、证据留痕与合同校验"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "ScienceRearch contributors" }]
+keywords = ["research", "reproducibility", "agents", "experiment-tracking", "preregistration"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.16"]
+
+# uv 用户走这里（PEP 735）；pip 用户用上面的 [dev] extra。
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.16"]
+
+[project.scripts]
+scirearch = "scirearch.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ckyOL/scienceRearch"
+Issues = "https://github.com/ckyOL/scienceRearch/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scirearch"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+extend-exclude = [".venv", "data", "paper"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# 文档与提示词里的全角标点是有意为之。
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.format]
+quote-style = "double"
