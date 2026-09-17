@@ -104,7 +104,7 @@ flowchart LR
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/research-agent-with-omp.md](docs/research-agent-with-omp.md) | 领域调研：AI Scientist v1/v2、Co-Scientist、PaperBench/MLE-bench、验证缺口 |
+| [docs/research-agent-with-omp.md](docs/research-agent-with-omp.md) | 领域调研：AI Scientist v1/v2、Co-Scientist、PaperBench/MLE-bench、验证缺口；开源生态对照（§1.1）与借鉴清单（§7） |
 | [docs/architecture.md](docs/architecture.md) | 目录职责、数据流、omp 机制映射、为什么这样摆 |
 | [docs/experiment-protocol.md](docs/experiment-protocol.md) | 实验 SOP：预注册、seed、日志、状态推进、复核 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 本地开发、提交规范、评审要求 |

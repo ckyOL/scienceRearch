@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 调研文档（[docs/research-agent-with-omp.md](docs/research-agent-with-omp.md)）增补：GitHub 开源生态对照（§1.1，含同题项目机制表）、借鉴清单与落地优先级（§7）、参考区生态项目列表。
+
 ## [0.1.0] - 2026-09-17
 
 ### 新增

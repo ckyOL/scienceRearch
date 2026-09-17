@@ -1,6 +1,6 @@
 # 科研 Agent × Oh My Pi：调研与落地
 
-> 调研范围：omp harness 机制文档（子agent / hub / eval / 隔离 / advisor / artifacts / tree / memory / skills）+ 9 篇一手文献。
+> 调研范围：omp harness 机制文档（子agent / hub / eval / 隔离 / advisor / artifacts / tree / memory / skills）+ 9 篇一手文献 + GitHub 开源生态对照（§1.1，star/fork 为 2026-09-17 API 快照）。
 > 标注约定：引用文献与 omp 机制均为可核查事实；带 **（推论）** 的段落是设计建议，非既有行为。
 
 ---
@@ -12,6 +12,7 @@
 3. **核心用法**：`scout` 侦察 → `task`/`workpool` 并行假设与实验 → `isolated` 分支隔离 → `advisor`/`reviewer` 独立复核 → `agent://`/`artifact://`/git 留痕 → `/tree` 管理探索分支。
 4. **项目架构**：`.omp/agents/*.md` 定义研究角色；`.omp/AGENTS.md` + `RULES.md` 定义实验规范；`experiments/` `artifacts/` `paper/` 承载可复现产物；`WATCHDOG.md` 承载复核清单。
 5. **红线**：无 seed、无执行轨迹、无独立复核的结果，不得流入写作阶段（见 §6）。
+6. **生态对照与借鉴**：开源侧同题项目已存在（§1.1）——nullius（预注册哈希 + 托管 holdout + 用已知真值自证）、honest-signal（git 时序防火墙 + required check）、science-superpowers（skills 化的预注册）、dsh-research-report / ArmProof（内容寻址证据账本 + 逐 claim 核验）。可迁移机制与落到本仓库的改动清单见 §7。
 
 ---
 
@@ -45,6 +46,30 @@
 1. 自动化写作不是稀缺能力，稀缺的是**可审计的实验轨迹** → 优先把算力投在隔离执行、日志、seed 管理。
 2. 自动评审不可作为接受判据（它同时是"生成物"和"裁判"）→ 需要**结构上独立**的复核者（不同 agent、不同模型、不同上下文）。
 3. 假设搜索（tree search / tournament）的收益已见诸 v2 与 Co-Scientist → 需要廉价的**分支并行 + 分支淘汰**机制，而非单条长上下文。
+
+### 1.1 开源生态对照（GitHub，star/fork 为 2026-09-17 API 快照）
+
+上述判断不只由文献支持：GitHub 上已有同题项目群，且独立收敛到同一结论（"瓶颈是验证"）。按形态分五类：
+
+| 谱系 | 代表项目（star 快照） | 与本项目的关系 |
+| --- | --- | --- |
+| 端到端 AI Scientist | `SakanaAI/AI-Scientist` 14.6k、`AI-Scientist-v2` 7.2k、`SamuelSchmidgall/AgentLaboratory` 5.9k、`HKUDS/AI-Researcher` 5.7k | 反向：它们的产出是本项目的"待验证对象" |
+| Autoresearch 循环 | `karpathy/autoresearch` 96k、ARIS 16k、AutoResearchClaw 14k | "改→跑→留/弃"优化循环，无预注册语义、无证据契约 |
+| **预注册 / 证据契约（同题）** | `martex-dev/nullius`、`alexcard3/honest-signal`、`K-Dense-AI/science-superpowers` 334★、`QasimKhan5x/ArmProof`、`PerryLink/dsh-research-report` 124★ | **直接对照**，机制见下表 |
+| Agent 原生研究产物格式 | `ARA-Labs/Agent-Native-Research-Artifact` 681★（arXiv 2604.24658） | claims→evidence 跨层绑定、死路归档 |
+| 通用实验管理 / 复现基础设施 | `mlflow/mlflow` 28k、`treeverse/dvc` 15.9k、`kedro-org/kedro` 11k、`IDSIA/sacred` 4.4k、`showyourwork/showyourwork` 664★ | 记录 run 与复现环境成熟，但不解决"判据先于结果" |
+
+**同题项目的关键机制**（事实，取自各自 README/仓库）：
+
+| 项目 | 预注册如何被强制 | 可验证性设计 |
+| --- | --- | --- |
+| [nullius](https://github.com/martex-dev/nullius) 3★/0 fork | 内容哈希在派发前写入、由外键校验；测试集只存在于 custodian 进程；`CHECK` 约束使 agent 无法把 holdout 数字写进库 | "数字不经过 LLM"（统计全为库代码计算）；`refuted`/`inconclusive` 与成功同等呈现；用已知真值（含零效应）问题库评测自身，公开两条被自己机制证伪的预测与一次结果撤销 |
+| [honest-signal](https://github.com/alexcard3/honest-signal) 3★/0 fork | `firewall.py`：预注册须在 git 上严格先于结果、之后不可编辑、kill 判据非空洞；GitHub Action 作为 required check | 机器产出的数字进 badge、靠人说的数字留正文，二者不合并；公开 incident log，含"gate 没被 required 就只是日志行"的实测事故 |
+| [science-superpowers](https://github.com/K-Dense-AI/science-superpowers) 334★/33 fork | 16 个 skills 把"预注册先于看数据"做成工作流核心（pre-registration over TDD）；`prereg.sh` 零依赖冻结/审计脚本，仅凭 git 历史自证预测先行且未被编辑 | 强制标注 confirmatory vs exploratory；可行性探索模式 opt-in，其产物不得当 confirmatory 证据 |
+| [dsh-research-report](https://github.com/PerryLink/dsh-research-report) 124★ | —（面向报告而非实验） | 内容寻址证据账本 + claim↔evidence 绑定；逐 claim 字节级核验，verdict 分 `unverified`/`insufficient`/`disproven`/`contradicted`；seal 前全量重审并拦截；证伪 ledger + 负知识（按 hash 记忆，除非证据变化） |
+| [ArmProof](https://github.com/QasimKhan5x/ArmProof) 0★/0 fork | `ops/experiments/` 冻结计划 + `ops/evidence/` accepted/rejected 历史 | 从原始行重算全部摘要（31 个窗口摘要 ← 3,678 行）；release gate 用 exit code 语义（0 通过 / 1 证据无效 / 2 判据失败）；明确"ledger 是完整性控制，不是独立 attestation" |
+
+**（推论）分发形态的实测差异**：同为 2026 年新项目，skills 形态（ARA 681★/52 fork、science-superpowers 334★/33 fork）的采用度比 repo-level harness（nullius 3★、honest-signal 3★）高出两个数量级。honest-signal 自注册的 kill 判据要求"2026-09-08 前有外部仓库引用其 Action"；代码搜索 `"alexcard3/honest-signal" path:.github` 结果为 0（M1 未达成；其 M2/M3 未核验），即"无人采纳"的判定条件已成立。若目标影响他人实践，方法学宜按 skills 形态分发，合同 CLI 作为可选强化。
 
 ---
 
@@ -339,10 +364,35 @@ for h in hypotheses:  # K 条假设
 | 无人值守实验无人拦 | 子agent 的 `tools.approvalMode` 被强制为 `yolo`（headless 无 UI 可确认），危险命令不会弹窗 | 用 `.omp/hooks/pre/*.ts` 在 `tool_call` 阶段 `block` 或改写 `input`；`data/raw` 挂只读 |
 | advisor 当执行者 | 它不可被消息、不可复活，且默认只读 | 分工：advisor 只提意见；执行交给普通子agent |
 | 人类评审在会话结束后才介入 | 早期方向性错误被放大 | `advisor` 在线 + `/collab` 实时旁观 + `WATCHDOG.md` 常驻清单 |
+| 闸门没有依赖者（不是 required check） | 门跑红也照样合并 = 只是日志行（honest-signal v0.3 的实测事故） | 把 `experiment contract` 设为分支保护里的 required status check；`--allow-empty` 只容忍"仓库尚无实验"，不容忍失败 |
+| 报告数字靠人或模型转写 | 数字与证据漂移且无法回算（honest-signal：手写 badge 数字 = 披着机器判决外衣的断言） | 数字只由脚本产出（`run.sh` → `metrics.json` → `scirearch report`）；writer 引用而非转写，正文每个数字可解析到 experiment id |
 
 ---
 
-## 7. 参考
+## 7. 借鉴清单：生态最佳实践 → 本仓库落地
+
+来源为 §1.1 的同题项目（机制均为其仓库事实）；"现状"对照本仓库实现（`src/scirearch/`、`.omp/`、`.github/workflows/ci.yml`）。优先级为推论。
+
+| # | 可迁移机制（来源） | 本项目现状 | 建议落点 | 优先级 |
+| --- | --- | --- | --- | --- |
+| 1 | **预注册=不变量，不是提示**（nullius：哈希 + 外键 + 托管 holdout） | 状态机 + 文件存在性：`preregistered` 期出现 `metrics.json` 即失败 | `scirearch new` 把 `hypothesis.md` 与 `criteria` 的 sha256 写入 manifest；`verify` 校验其不可变（事后改判据即失败） | P0 |
+| 2 | **判据机器可判定**（science-superpowers 的决策规则；nullius 的"数字不经过 LLM"） | `criteria` 是自由文本，仅做非空/存在性检查 | 判据支持可求值形式（`-c 'std_accuracy < 0.01'`）在 `metrics.json` 上求值；`verify` 输出三态：满足 / 违反 / 不可判定 | P0 |
+| 3 | **时序证明**（honest-signal rule a–c；`prereg.sh` 仅凭 git 历史自证） | 无 git 时序检查 | `verify` 增 git 检查：预注册提交严格早于 `metrics.json` 首次出现，且此后未被编辑 | P0 |
+| 4 | **闸门必须被依赖**（honest-signal：不是 required check 就不是闸门） | CI `contract` job 存在，但模板仓库未开分支保护 | 文档 + `.github/` 说明：把 `experiment contract` 设为 required status check | P1 |
+| 5 | **自证有效、允许结论为负**（nullius：已知真值问题库 + 公开证伪） | 无 | 建"已知真值 / 植入缺陷"的最小问题库，度量"预注册 + 独立复核"相对裸 agent 的收益；结论为负照样按终态归档 | P1 |
+| 6 | **自注册 kill 判据**（honest-signal：发布时即写明什么会杀死本项目） | `hypothesis.md` 有实验级"证伪路径"，无项目级 | 增加项目级预注册文档与到期判定（例：× 月内无外部实验引用即调整方向） | P1 |
+| 7 | **负知识持久化**（dsh-research-report：证伪 claim 按 hash 记忆，除非证据变化） | `refuted` 留痕，但无"重提即判"机制 | `verify` / `report` 建已证伪索引；重复提出的判据先命中历史结论 | P2 |
+| 8 | **claim↔evidence 跨层绑定 + 死路归档 + provenance 标注**（ARA） | `hypothesis.md` + `history`；无逐条 claim 绑定 | `report` 输出中每条结论附 experiment id；`notes/` 保留失败路径并索引 | P2 |
+| 9 | **校验器独立可跑 + exit code 语义**（ArmProof 0/1/2；dsh 独立 CLI） | `scirearch verify --json` 已具零依赖形态 | 固定 exit code 语义（0 通过 / 1 合同非法 / 2 判据违反）并写入 `docs/experiment-protocol.md` | P2 |
+| 10 | **完整性控制 ≠ 独立 attestation**（ArmProof 的自我限定；honest-signal 的数字二分） | 报告未区分"机器校验"与"人证" | `report` / badge 标注哪些数字由 `verify` 机器判定、哪些是复核者判断 | P2 |
+
+**已具备、不必重复建设**：零依赖合同层（纯标准库）、状态机终态不可回退、`refuted`/`inconclusive` 与 `completed` 同等留痕、`logs/` 非空与 `run.sh` 可执行检查、`data/raw` 在 `tool_call` 层拦截、生成/复核 agent 分离 + advisor/WATCHDOG、`isolated` 隔离执行。
+
+**（推论）差异化**：在同题项目中，本仓库独有的组合是"状态机 CLI（终态强约束 seed 与非空日志）+ harness 级护栏 + 生成/复核角色分离（writer 无 `bash`/`eval`）"。P0 三项补齐后，"判据机械化"与"时序证明"将与 nullius / honest-signal 持平，同时保留 harness 侧的执行与复核能力。
+
+---
+
+## 8. 参考
 
 **文献**（均为 arXiv 摘要原文核对）
 - Lu et al., *The AI Scientist* — 2408.06292
@@ -364,3 +414,15 @@ for h in hypotheses:  # K 条假设
 - `tree.md`、`tools/checkpoint.md` — 分支与回滚
 - `memory.md`、`skills.md`、`context-files.md`、`hooks.md` — 沉淀与自动化
 - `collab.md`、`sdk.md` — 人机协作与程序化编排
+
+**生态项目**（star/fork 为 2026-09-17 GitHub API 快照；机制描述取自各自 README/仓库）
+- [martex-dev/nullius](https://github.com/martex-dev/nullius) — 预注册哈希 + 托管 holdout + 已知真值评测
+- [alexcard3/honest-signal](https://github.com/alexcard3/honest-signal) — git 时序防火墙 + required check + 独立复算
+- [K-Dense-AI/science-superpowers](https://github.com/K-Dense-AI/science-superpowers) — skills 化的预注册方法论（`prereg.sh`）
+- [ARA-Labs/Agent-Native-Research-Artifact](https://github.com/ARA-Labs/Agent-Native-Research-Artifact) — Agent 原生研究产物格式（arXiv 2604.24658）
+- [PerryLink/dsh-research-report](https://github.com/PerryLink/dsh-research-report) — 内容寻址证据账本 + 逐 claim 核验
+- [QasimKhan5x/ArmProof](https://github.com/QasimKhan5x/ArmProof) — 证据门禁 + 原始行重算 + release exit code
+- [SakanaAI/AI-Scientist-v2](https://github.com/SakanaAI/AI-Scientist-v2)、[SamuelSchmidgall/AgentLaboratory](https://github.com/SamuelSchmidgall/AgentLaboratory)、[HKUDS/AI-Researcher](https://github.com/HKUDS/AI-Researcher)、[karpathy/autoresearch](https://github.com/karpathy/autoresearch) — 端到端 / 循环式自主科研
+- [renee-jia/scholar-loop](https://github.com/renee-jia/scholar-loop) — 冻结评分 + 防 reward-hack 的循环工程
+- 基础设施：[mlflow](https://github.com/mlflow/mlflow)、[dvc](https://github.com/treeverse/dvc)、[kedro](https://github.com/kedro-org/kedro)、[sacred](https://github.com/IDSIA/sacred)、[showyourwork](https://github.com/showyourwork/showyourwork)
+- 核验方式：`gh api repos/<owner>/<repo>` 取 star/fork/pushed_at；arXiv `id_list` 摘要原文核对
