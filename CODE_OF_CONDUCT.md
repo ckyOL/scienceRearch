@@ -22,7 +22,12 @@
 
 ## 执行
 
-违规可通过 `<maintainer@example.com>` 私下报告给维护者。所有投诉都会被及时、公正地审查与处理；维护者有义务对报告者身份保密。
+违规可通过 GitHub 的私密渠道报告给维护者，本仓库不提供邮箱：
+
+1. **滥用与骚扰**：使用 GitHub 的 [Report abuse](https://github.com/contact/report-abuse) 表单，由 GitHub 处理并同步维护者。
+2. **仓库内容与研究诚信**：使用本仓库 [Security → Report a vulnerability](https://github.com/ckyOL/scienceRearch/security/advisories/new) 私有通道（涉及伪造数据、篡改结果、冒称已验证结论等）。该通道对本仓库的任何内容开放，隐私影响类报告不限于漏洞。
+
+所有投诉都会被及时、公正地审查与处理；维护者有义务对报告者身份保密。
 
 处理措施按严重程度递进：私下警告 → 公开警告 → 临时封禁 → 永久封禁。
 

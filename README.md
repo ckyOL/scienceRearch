@@ -111,11 +111,12 @@ flowchart LR
 
 ## 作为模板使用时
 
-克隆后需替换 3 处占位符：
+克隆后需替换 2 处占位符：
 
 1. 仓库地址：README 徽章、`pyproject.toml`（`Homepage` / `Issues`）、`CITATION.cff`、`CHANGELOG.md` 链接、`.github/ISSUE_TEMPLATE/config.yml`，本仓库已统一指向 `ckyOL/scienceRearch`。
 2. `LICENSE` 与 `CITATION.cff` 中的版权/作者信息（默认 `ScienceRearch contributors`，可整体替换）。
-3. `CODE_OF_CONDUCT.md` 与 `SECURITY.md` 中的执行联系人邮箱（默认 `<maintainer@example.com>`）。
+
+举报渠道走 GitHub 原生机制，无邮箱：安全与行为准则报告见 [SECURITY.md](SECURITY.md) 与 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)（私有漏洞报告 + GitHub Report abuse）。
 
 ## 许可
 

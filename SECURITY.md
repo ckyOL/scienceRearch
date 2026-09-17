@@ -2,7 +2,7 @@
 
 ## 报告漏洞
 
-请通过 `<maintainer@example.com>` 私下报告，或在 GitHub 上开启 Security Advisory。**不要**为安全问题开公开 issue。我们会在 7 天内确认，并在修复发布后致谢（如你愿意署名）。
+请通过 GitHub 的**私有漏洞报告**提交：仓库 [Security 标签页](https://github.com/ckyOL/scienceRearch/security) → **Report a vulnerability**（直达链接 [security/advisories/new](https://github.com/ckyOL/scienceRearch/security/advisories/new)）。该通道已启用，本仓库为公开仓库，**任何人**无需仓库权限即可提交，报告仅维护者可见。**不要**为安全问题开公开 issue。我们会在 7 天内确认，并在修复发布后致谢（如你愿意署名）。
 
 ## 支持范围
 
