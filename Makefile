@@ -32,8 +32,9 @@ report: ## 输出实验汇总表
 
 check: lint test verify ## 提交前完整闸门
 
-new: ## 新建实验：make new name=slug hypothesis="..."
-	$(UV) run scirearch new $(name) --hypothesis "$(hypothesis)"
+new: ## 新建实验：make new name=slug hypothesis="…" metric="…" criteria="std < 0.01" falsification="…"
+	$(UV) run scirearch new $(name) --hypothesis "$(hypothesis)" --metric "$(metric)" \
+		--criteria "$(criteria)" --falsification "$(falsification)"
 
 clean: ## 清理缓存
 	rm -rf .pytest_cache .ruff_cache **/__pycache__ src/*.egg-info

@@ -9,10 +9,15 @@ from pathlib import Path
 import pytest
 
 from scirearch.experiment import (
+    SCHEMA_VERSION,
     ExperimentError,
+    canonical_text_sha256,
     create_experiment,
+    criteria_sha256,
+    find_prior_refutations,
     load_manifest,
     next_experiment_id,
+    preregistration_record_sha256,
     set_status,
     slugify,
 )
@@ -23,6 +28,7 @@ def _create(root: Path, slug: str = "baseline", **overrides: object) -> Path:
         "hypothesis": "固定 seed 下方差小于 1%",
         "metric": "std(accuracy)",
         "criteria": ["std < 0.01", "无 NaN"],
+        "falsification": "5 个 seed 的 std 大于 0.01 则放弃该假设",
         "seed": 1729,
     }
     kwargs.update(overrides)
@@ -50,19 +56,47 @@ def test_create_writes_full_preregistration_bundle(tmp_path: Path) -> None:
     assert exp_dir.name == "exp-0001-baseline"
 
     manifest = load_manifest(exp_dir)
-    assert manifest["schema_version"] == 1
+    assert manifest["schema_version"] == SCHEMA_VERSION
     assert manifest["status"] == "preregistered"
     assert manifest["seed"] == 1729
     assert manifest["criteria"] == ["std < 0.01", "无 NaN"]
+    assert manifest["falsification"] == "5 个 seed 的 std 大于 0.01 则放弃该假设"
     assert manifest["history"][-1]["status"] == "preregistered"
     assert manifest["git_commit"] is None  # tmp_path 不是 git 仓库
+    assert "prior_refutations" not in manifest
 
     hypothesis = (exp_dir / "hypothesis.md").read_text(encoding="utf-8")
     assert "std < 0.01" in hypothesis
+    assert "5 个 seed 的 std 大于 0.01 则放弃该假设" in hypothesis
+
+    block = manifest["preregistration"]
+    assert block["algorithm"] == "sha256"
+    assert block["criteria_sha256"] == criteria_sha256(manifest["criteria"])
+    assert block["hypothesis_md_sha256"] == canonical_text_sha256(hypothesis)
+    assert block["record_sha256"] == preregistration_record_sha256(
+        hypothesis=manifest["hypothesis"],
+        metric=manifest["metric"],
+        criteria=manifest["criteria"],
+        falsification=manifest["falsification"],
+        seed=manifest["seed"],
+    )
 
     run_sh = exp_dir / "run.sh"
     assert run_sh.stat().st_mode & stat.S_IXUSR
     assert "SEED:-1729" in run_sh.read_text(encoding="utf-8")
+
+
+def test_hashes_pin_content_not_formatting() -> None:
+    # 空白折叠：格式变体视为同一判据（负知识索引不能因空格差异而漏配）。
+    assert criteria_sha256(["std < 0.01"]) == criteria_sha256(["std<0.01"])
+    # 顺序与内容受保护：增删、改序都改变哈希。
+    assert criteria_sha256(["a < 1", "b < 2"]) != criteria_sha256(["b < 2", "a < 1"])
+    assert criteria_sha256(["a < 1"]) != criteria_sha256(["a < 1", "b < 2"])
+    # 记录哈希覆盖证伪路径：只改证伪路径也必须改变哈希。
+    common = {"hypothesis": "h", "metric": "m", "criteria": ["a < 1"], "seed": 1}
+    assert preregistration_record_sha256(falsification="x", **common) != (
+        preregistration_record_sha256(falsification="y", **common)
+    )
 
 
 def test_ids_increment_and_slugs_are_normalized(tmp_path: Path) -> None:
@@ -80,6 +114,11 @@ def test_ids_increment_and_slugs_are_normalized(tmp_path: Path) -> None:
 def test_missing_criteria_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ExperimentError, match="判据"):
         _create(tmp_path, criteria=["   "])
+
+
+def test_missing_falsification_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ExperimentError, match="证伪路径"):
+        _create(tmp_path, falsification="   ")
 
 
 def test_terminal_status_requires_parsable_metrics(tmp_path: Path) -> None:
@@ -100,6 +139,8 @@ def test_terminal_status_requires_parsable_metrics(tmp_path: Path) -> None:
     assert manifest["status"] == "completed"
     assert manifest["history"][-1]["reason"] == "判据满足"
     assert manifest["history"][-1]["metrics"].endswith("metrics.json")
+    # 状态推进不得触碰预注册块。
+    assert manifest["preregistration"] == load_manifest(exp_dir)["preregistration"]
 
 
 def test_status_machine_rejects_skips_and_terminal_changes(tmp_path: Path) -> None:
@@ -132,3 +173,18 @@ def test_refuted_runs_keep_their_evidence(tmp_path: Path) -> None:
         "running",
         "refuted",
     ]
+
+
+def test_reproposed_refuted_criteria_hit_negative_knowledge(tmp_path: Path) -> None:
+    refuted = _create(tmp_path, slug="first", criteria=["std < 0.01"])
+    metrics = _write_metrics(refuted, {"std": 0.42})
+    set_status(refuted, "running")
+    set_status(refuted, "refuted", metrics_path=metrics)
+
+    assert find_prior_refutations(tmp_path, criteria_sha256(["std < 0.01"])) == ["exp-0001"]
+
+    # 空白变体命中同一判据；不同判据不命中。
+    repeat = _create(tmp_path, slug="repeat", criteria=["std<0.01"])
+    assert load_manifest(repeat)["prior_refutations"] == ["exp-0001"]
+    other = _create(tmp_path, slug="other", criteria=["std < 0.05"])
+    assert "prior_refutations" not in load_manifest(other)

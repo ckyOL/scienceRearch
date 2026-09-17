@@ -1,0 +1,2 @@
+# 预注册哈希对换行敏感：实验目录统一 LF，避免不同平台 checkout 后哈希漂移。
+experiments/** text eol=lf

@@ -386,6 +386,11 @@ for h in hypotheses:  # K 条假设
 | 9 | **校验器独立可跑 + exit code 语义**（ArmProof 0/1/2；dsh 独立 CLI） | `scirearch verify --json` 已具零依赖形态 | 固定 exit code 语义（0 通过 / 1 合同非法 / 2 判据违反）并写入 `docs/experiment-protocol.md` | P2 |
 | 10 | **完整性控制 ≠ 独立 attestation**（ArmProof 的自我限定；honest-signal 的数字二分） | 报告未区分"机器校验"与"人证" | `report` / badge 标注哪些数字由 `verify` 机器判定、哪些是复核者判断 | P2 |
 
+> **实施进度（Unreleased，2026-09-17）**：#1–#3 已在合同层落地（manifest v2 登记 `criteria` / `hypothesis.md` / 预注册记录三个 sha256；判据三态求值 + 状态一致性门；git 时序防火墙）：
+> #4 落为 CI 注释与实验协议 §6（required status check 设置）；#5 落为 `analysis/known-truth/` 问题库 + 评分器；
+> #6 落为 `docs/project-preregistration.md`；#7/#8/#10 落为负知识索引（`criteria_sha256`）、`report` 的判据与 `[机器]`/`[人工]` 标注、`notes/dead-ends/` 约定；#9 落为 `verify` 退出码 0/1/2。
+> 上表"本项目现状"列保留调研时（v0.1.0）的快照。
+
 **已具备、不必重复建设**：零依赖合同层（纯标准库）、状态机终态不可回退、`refuted`/`inconclusive` 与 `completed` 同等留痕、`logs/` 非空与 `run.sh` 可执行检查、`data/raw` 在 `tool_call` 层拦截、生成/复核 agent 分离 + advisor/WATCHDOG、`isolated` 隔离执行。
 
 **（推论）差异化**：在同题项目中，本仓库独有的组合是"状态机 CLI（终态强约束 seed 与非空日志）+ harness 级护栏 + 生成/复核角色分离（writer 无 `bash`/`eval`）"。P0 三项补齐后，"判据机械化"与"时序证明"将与 nullius / honest-signal 持平，同时保留 harness 侧的执行与复核能力。

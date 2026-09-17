@@ -20,11 +20,15 @@ experiments/exp-0001-slug/
 
 ## 五步
 
-1. `scirearch new <slug> -H "假设" -m "指标" -c "判据" --seed N` —— 判据先于结果。
-2. 编辑 `run.sh` 的 `RUN=` 一行；`bash run.sh` 执行，seed 经 `SEED=` 覆盖。
-3. `scirearch status <id> running` → 完成后 `... completed --metrics <path> --reason "..."`（否定结果用 `refuted`）。
-4. `scirearch verify` —— 不通过不得报告 supported。
-5. `scirearch report --json` —— 写作阶段只引用这里的终态实验。
+1. `scirearch new <slug> -H "假设" -m "指标" -c "std_accuracy < 0.01" -f "证伪路径" --seed N`
+   —— 判据与证伪路径先于结果，**创建即冻结**（sha256 登记，事后编辑会被 `verify` 检出）。
+2. **先提交预注册**（`git commit`），再编辑 `run.sh` 的 `RUN=` 一行并执行；
+   seed 经 `SEED=` 覆盖。顺序反了就是 git 时序违规；实验类提交不要 squash 合并。
+3. `scirearch status <id> running` → 完成后 `... completed --metrics <path> --reason "..."`
+   （否定结果用 `refuted`）。可求值判据由机器三态求值：`completed` 不得有违反，
+   `refuted` 必须有违反，否则 `verify` 退出码 2。
+4. `scirearch verify` —— 退出码 0 通过 / 1 合同非法 / 2 判据冲突；不通过不得报告 supported。
+5. `scirearch report --json` —— 写作阶段只引用这里的终态实验；标 `[人工]` 的判据需复核者裁定。
 
 ## 合法状态转移
 

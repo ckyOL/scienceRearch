@@ -1,10 +1,13 @@
 """实验 manifest：预注册、状态机与来源信息。
 
 manifest（`experiments/<id>/experiment.json`）是机读真相源；`hypothesis.md` 是它的可读镜像。
+两者在创建时同时生成并登记 sha256（`preregistration` 块）——预注册是不变量，不是提示：
+创建之后对判据、证伪路径或镜像的任何修改都会被 `scirearch verify` 检出。
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -12,17 +15,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+from scirearch.criteria import normalize as normalize_criterion
+
+SCHEMA_VERSION = 2
 EXPERIMENTS_DIRNAME = "experiments"
 ID_PREFIX = "exp"
 ID_WIDTH = 4
+PREREGISTRATION_ALGORITHM = "sha256"
 
 STATUS_PREREGISTERED = "preregistered"
 STATUS_RUNNING = "running"
-TERMINAL_STATUSES = frozenset({"completed", "refuted", "inconclusive", "abandoned"})
+STATUS_COMPLETED = "completed"
+STATUS_REFUTED = "refuted"
+STATUS_INCONCLUSIVE = "inconclusive"
+STATUS_ABANDONED = "abandoned"
+TERMINAL_STATUSES = frozenset(
+    {STATUS_COMPLETED, STATUS_REFUTED, STATUS_INCONCLUSIVE, STATUS_ABANDONED}
+)
 ALL_STATUSES = frozenset({STATUS_PREREGISTERED, STATUS_RUNNING}) | TERMINAL_STATUSES
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    STATUS_PREREGISTERED: frozenset({STATUS_RUNNING, "abandoned"}),
+    STATUS_PREREGISTERED: frozenset({STATUS_RUNNING, STATUS_ABANDONED}),
     STATUS_RUNNING: frozenset(TERMINAL_STATUSES),
     **dict.fromkeys(sorted(TERMINAL_STATUSES), frozenset()),
 }
@@ -34,10 +46,12 @@ REQUIRED_MANIFEST_KEYS = (
     "hypothesis",
     "metric",
     "criteria",
+    "falsification",
     "seed",
     "status",
     "created_at",
     "history",
+    "preregistration",
 )
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -66,8 +80,8 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
 HYPOTHESIS_TEMPLATE = """# {experiment_id} · {slug}
 
-> 状态：`preregistered` ｜ 由 `scirearch new` 生成。**判据一经登记不得事后修改**；
-> 事后追加判据等同于伪造，会被 `scirearch verify` 与复核者判为违规。
+> 状态：`preregistered` ｜ 由 `scirearch new` 生成，**创建后不可编辑**（sha256 已登记在
+> `experiment.json.preregistration`；改动即判为预注册违规）。判据与证伪路径必须在跑实验前写好。
 
 ## 假设
 
@@ -83,7 +97,7 @@ HYPOTHESIS_TEMPLATE = """# {experiment_id} · {slug}
 
 ## 证伪路径
 
-<!-- 出现什么结果你会放弃该假设？必填：先写下反例，再跑实验。 -->
+{falsification}
 
 ## 执行
 
@@ -91,9 +105,7 @@ HYPOTHESIS_TEMPLATE = """# {experiment_id} · {slug}
 SEED={seed} bash run.sh
 ```
 
-## 结果
-
-终态后由 `scirearch report --json` 汇总；原始输出在 `logs/`，指标在 `metrics.json`。
+原始输出在 `logs/`，指标在 `metrics.json`；汇总与判据判定见 `scirearch report`。
 """
 
 
@@ -135,6 +147,80 @@ def experiments_dir(root: Path) -> Path:
     return root / EXPERIMENTS_DIRNAME
 
 
+def canonical_text_sha256(text: str) -> str:
+    """对文本求 sha256：CRLF 归一为 LF 后按 UTF-8 编码（跨平台稳定）。"""
+    return hashlib.sha256(text.replace("\r\n", "\n").encode("utf-8")).hexdigest()
+
+
+def criteria_sha256(criteria: list[str]) -> str:
+    """判据集合的规范哈希：逐条折叠空白后按序 JSON 编码（顺序与内容都受保护）。"""
+    canonical = [normalize_criterion(c) for c in criteria]
+    payload = json.dumps(canonical, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def preregistration_record_sha256(
+    *,
+    hypothesis: str,
+    metric: str,
+    criteria: list[str],
+    falsification: str,
+    seed: int | None,
+) -> str:
+    """机读预注册记录的规范哈希：覆盖假设、指标、判据、证伪路径与 seed。"""
+    record = {
+        "hypothesis": hypothesis.strip(),
+        "metric": metric.strip(),
+        "criteria": [normalize_criterion(c) for c in criteria],
+        "falsification": falsification.strip(),
+        "seed": seed,
+    }
+    payload = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def preregistration_block(
+    *,
+    hypothesis: str,
+    metric: str,
+    criteria: list[str],
+    falsification: str,
+    seed: int | None,
+    hypothesis_md: str,
+) -> dict[str, Any]:
+    """构造 manifest 的 `preregistration` 块（三个哈希各司其职，见实验协议文档）。"""
+    return {
+        "algorithm": PREREGISTRATION_ALGORITHM,
+        "criteria_sha256": criteria_sha256(criteria),
+        "hypothesis_md_sha256": canonical_text_sha256(hypothesis_md),
+        "record_sha256": preregistration_record_sha256(
+            hypothesis=hypothesis,
+            metric=metric,
+            criteria=criteria,
+            falsification=falsification,
+            seed=seed,
+        ),
+    }
+
+
+def find_prior_refutations(root: Path, criteria_hash: str) -> list[str]:
+    """负知识查询：返回判据哈希相同且已判 `refuted` 的历史实验 id。"""
+    hits: list[str] = []
+    for child in sorted(experiments_dir(root).glob(f"{ID_PREFIX}-*")):
+        if not child.is_dir():
+            continue
+        try:
+            manifest = load_manifest(child)
+        except ExperimentError:
+            continue
+        if manifest.get("status") != STATUS_REFUTED:
+            continue
+        block = manifest.get("preregistration")
+        if isinstance(block, dict) and block.get("criteria_sha256") == criteria_hash:
+            hits.append(str(manifest.get("id", child.name)))
+    return hits
+
+
 def next_experiment_id(root: Path) -> str:
     """扫描已有 `exp-NNNN-*` 目录，返回下一个顺序 id。"""
     highest = 0
@@ -165,6 +251,7 @@ def create_experiment(
     hypothesis: str,
     metric: str,
     criteria: list[str],
+    falsification: str,
     seed: int | None = None,
     run_cmd: str | None = None,
 ) -> Path:
@@ -176,6 +263,8 @@ def create_experiment(
         raise ExperimentError("假设不能为空。")
     if not metric.strip():
         raise ExperimentError("指标不能为空。")
+    if not falsification.strip():
+        raise ExperimentError("证伪路径不能为空：先写下什么结果会让你放弃该假设，再创建实验。")
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
         raise ExperimentError("seed 必须是整数。")
 
@@ -184,6 +273,25 @@ def create_experiment(
     if exp_dir.exists():
         raise ExperimentError(f"实验目录已存在：{exp_dir}")
 
+    hypothesis_md = HYPOTHESIS_TEMPLATE.format(
+        experiment_id=experiment_id,
+        slug=exp_dir.name.removeprefix(f"{experiment_id}-"),
+        hypothesis=hypothesis.strip(),
+        metric=metric.strip(),
+        criteria="\n".join(f"- [ ] {c}" for c in clean_criteria),
+        falsification=falsification.strip(),
+        seed=seed if seed is not None else "<待定>",
+    )
+    block = preregistration_block(
+        hypothesis=hypothesis,
+        metric=metric,
+        criteria=clean_criteria,
+        falsification=falsification,
+        seed=seed,
+        hypothesis_md=hypothesis_md,
+    )
+    prior_refutations = find_prior_refutations(root, str(block["criteria_sha256"]))
+
     manifest: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "id": experiment_id,
@@ -191,28 +299,22 @@ def create_experiment(
         "hypothesis": hypothesis.strip(),
         "metric": metric.strip(),
         "criteria": clean_criteria,
+        "falsification": falsification.strip(),
         "seed": seed,
         "status": STATUS_PREREGISTERED,
         "created_at": utc_now(),
         "git_commit": git_commit(root),
+        "preregistration": block,
         "history": [
             {"status": STATUS_PREREGISTERED, "at": utc_now(), "reason": "预注册", "actor": "cli"}
         ],
     }
+    if prior_refutations:
+        manifest["prior_refutations"] = prior_refutations
 
     exp_dir.mkdir(parents=True)
     save_manifest(exp_dir, manifest)
-    (exp_dir / "hypothesis.md").write_text(
-        HYPOTHESIS_TEMPLATE.format(
-            experiment_id=experiment_id,
-            slug=manifest["slug"],
-            hypothesis=manifest["hypothesis"],
-            metric=manifest["metric"],
-            criteria="\n".join(f"- [ ] {c}" for c in clean_criteria),
-            seed=seed if seed is not None else "<待定>",
-        ),
-        encoding="utf-8",
-    )
+    (exp_dir / "hypothesis.md").write_text(hypothesis_md, encoding="utf-8")
     run_sh = exp_dir / "run.sh"
     run_sh.write_text(
         RUN_SH_TEMPLATE.format(

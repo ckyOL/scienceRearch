@@ -13,7 +13,12 @@
 - 复现基准 PaperBench 上，最强 agent 的复现分仅 **21.0%**，未超过人类 ML PhD 基线（arXiv 2504.01848）。
 - 瓶颈已从"agent 能否做完研究"转为"**评审能否验证 agent 产出的 claims**"。
 
-本仓库因此不做"自动写论文"，只做一件更硬的事：**让每条结论都能被机器校验**（判据预注册、seed 与日志强制留痕、状态机禁止跳步、写作只允许引用已验证产物）。
+本仓库因此不做"自动写论文"，只做一件更硬的事：**让每条结论都能被机器校验**（判据预注册并冻结、
+seed 与日志强制留痕、状态机禁止跳步、git 时序证明判据先于结果、写作只允许引用已验证产物）。
+
+机制本身也接受检验：`analysis/known-truth/` 用已知真值（含零效应、混杂、多重比较、泄漏）问题
+度量"预注册 + 独立复核"相对裸 agent 的收益；`docs/project-preregistration.md` 事先写下
+什么结果会杀死这个项目。
 
 ## 快速开始
 
@@ -29,23 +34,27 @@ scirearch --help
 ```
 
 ```bash
-# 1) 预注册一个实验（先写判据，后跑实验）
+# 1) 预注册一个实验（先写判据与证伪路径，后跑实验）
 scirearch new fixed-seed-baseline \
   --hypothesis "固定 seed 下基线方差小于 1%" \
   --metric "std(accuracy) over 5 seeds" \
-  --criteria "< 0.01" --criteria "无 NaN" \
+  --criteria "std_accuracy < 0.01" --criteria "无 NaN" \
+  --falsification "5 个 seed 的 std 大于 0.01 即放弃该假设" \
   --seed 1729
 
-# 2) 跑实验（编辑 experiments/exp-0001-fixed-seed-baseline/run.sh 中唯一一行 RUN=）
+# 2) 先提交预注册（git 时序是证据；实验类提交不要 squash 合并）
+git add experiments/exp-0001-fixed-seed-baseline && git commit -m "prereg: exp-0001"
+
+# 3) 跑实验（编辑 experiments/exp-0001-fixed-seed-baseline/run.sh 中唯一一行 RUN=）
 bash experiments/exp-0001-fixed-seed-baseline/run.sh
 
-# 3) 推进状态（非法跳步会被拒绝）
+# 4) 推进状态（非法跳步会被拒绝；completed 要求判据全满足）
 scirearch status experiments/exp-0001-fixed-seed-baseline completed --metrics experiments/exp-0001-fixed-seed-baseline/metrics.json
 
-# 4) 校验合同：无 seed / 无日志 / 先有结果后有判据，一律失败
+# 5) 校验合同：退出码 0 通过 / 1 合同非法 / 2 判据冲突
 scirearch verify
 
-# 5) 汇总（写作阶段的数据来源）
+# 6) 汇总（写作阶段的数据来源；含判据判定与负知识索引）
 scirearch report
 ```
 
@@ -66,32 +75,37 @@ scirearch report
 ├─ tests/                    # 针对合同的行为测试
 ├─ experiments/              # 每个假设一个目录（预注册 + 可重跑入口 + 证据）
 ├─ data/                     # raw 只读，interim/processed 可重建
-├─ analysis/                 # 从 experiments/ 重建的统计与图表
+├─ analysis/                 # 从 experiments/ 重建的统计与图表；known-truth/ 为自检问题库
 ├─ paper/                    # 稿件（数字必须可解析到实验 id）
-├─ docs/                     # 调研、架构、实验协议
-└─ notes/                    # 探索笔记（不构成证据）
+├─ docs/                     # 调研、架构、实验协议、项目级预注册
+└─ notes/                    # 探索笔记与死路归档（不构成证据，见 notes/README.md）
 ```
 
 ## 工作流与闸门
 
 ```mermaid
 flowchart LR
-  P["预注册<br/>hypothesis.md + 判据 + seed"] --> R["执行<br/>run.sh（固定 seed，日志留痕）"]
+  P["预注册（创建即冻结<br/>假设 + 判据 + 证伪路径 + seed）"] --> C["提交预注册<br/>git"] --> R["执行<br/>run.sh（固定 seed，日志留痕）"]
   R --> S["状态推进<br/>running → completed / refuted / inconclusive"]
-  S --> V{"scirearch verify"}
-  V -->|缺证据| X["打回：补日志 / 补 seed / 撤销提前结果"]
-  V -->|通过| W["写作与复核<br/>writer 只引用已验产物"]
+  S --> V{"scirearch verify<br/>合同 + 判据三态 + git 时序"}
+  V -->|"1 合同问题"| X["打回：补日志 / 补 seed / 撤销提前结果"]
+  V -->|"2 判据冲突"| Y["改判 refuted/inconclusive 或修正证据"]
+  V -->|"0 通过"| W["写作与复核<br/>writer 只引用已验产物"]
 ```
 
-合同（`scirearch verify` 强制，CI 同款）：
+合同（`scirearch verify` 强制，CI 同款；退出码 0 通过 / 1 合同非法 / 2 判据冲突）：
 
 | 规则 | 检查点 |
 | --- | --- |
 | 先判据后结果 | `status=preregistered` 时出现 `metrics.json` → 失败 |
+| 预注册冻结 | `criteria` / `hypothesis.md` / 预注册记录的 sha256 在创建时登记，任何事后修改 → 失败 |
+| git 时序防火墙 | 预注册提交必须严格早于结果提交，且冻结块未被编辑（CI 以 `fetch-depth: 0` 裁定） |
+| 判据与状态一致 | 可求值判据三态求值：`completed` 不得有违反，`refuted` 必须有违反，否则退出码 2 |
 | 无 seed 不结论 | 终态必须带 `seed`，且 `logs/` 有非空原始日志 |
 | 可重跑 | `run.sh` 存在且可执行 |
 | 状态不可跳步 | `preregistered → completed` 被拒绝；终态不可再变更 |
 | 留痕 | 每次状态变更写入 `experiment.json.history`（含 reason 与来源） |
+| 负知识 | 曾被证伪的判据（按 `criteria_sha256`）重提时命中历史结论并记录 `prior_refutations` |
 
 ## 与 Oh My Pi 协作
 
@@ -106,15 +120,19 @@ flowchart LR
 | --- | --- |
 | [docs/research-agent-with-omp.md](docs/research-agent-with-omp.md) | 领域调研：AI Scientist v1/v2、Co-Scientist、PaperBench/MLE-bench、验证缺口；开源生态对照（§1.1）与借鉴清单（§7） |
 | [docs/architecture.md](docs/architecture.md) | 目录职责、数据流、omp 机制映射、为什么这样摆 |
-| [docs/experiment-protocol.md](docs/experiment-protocol.md) | 实验 SOP：预注册、seed、日志、状态推进、复核 |
+| [docs/experiment-protocol.md](docs/experiment-protocol.md) | 实验 SOP：预注册哈希、判据三态、seed、日志、状态推进、退出码、复核与写作闸门 |
+| [docs/project-preregistration.md](docs/project-preregistration.md) | 项目级主张与自注册 kill 判据（什么会杀死本项目、到期怎么判定） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 本地开发、提交规范、评审要求 |
 
 ## 作为模板使用时
 
-克隆后需替换 2 处占位符：
+克隆后需做 3 件事：
 
-1. 仓库地址：README 徽章、`pyproject.toml`（`Homepage` / `Issues`）、`CITATION.cff`、`CHANGELOG.md` 链接、`.github/ISSUE_TEMPLATE/config.yml`，本仓库已统一指向 `ckyOL/scienceRearch`。
-2. `LICENSE` 与 `CITATION.cff` 中的版权/作者信息（默认 `ScienceRearch contributors`，可整体替换）。
+1. 替换仓库地址占位符：README 徽章、`pyproject.toml`（`Homepage` / `Issues`）、`CITATION.cff`、`CHANGELOG.md` 链接、`.github/ISSUE_TEMPLATE/config.yml`，本仓库已统一指向 `ckyOL/scienceRearch`。
+2. 替换 `LICENSE` 与 `CITATION.cff` 中的版权/作者信息（默认 `ScienceRearch contributors`，可整体替换）。
+3. **启用分支保护**：把 CI 的 `experiment contract` 设为 main 的 required status check
+   （`gh api -X PUT repos/{owner}/{repo}/branches/main/protection -F "required_status_checks[strict]=true" -F "required_status_checks[contexts][]=experiment contract"`）。
+   没被依赖的闸门只是日志行——见 [docs/experiment-protocol.md §6](docs/experiment-protocol.md)。
 
 举报渠道走 GitHub 原生机制，无邮箱：安全与行为准则报告见 [SECURITY.md](SECURITY.md) 与 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)（私有漏洞报告 + GitHub Report abuse）。
 

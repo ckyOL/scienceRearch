@@ -43,7 +43,8 @@ scirearch verify
 # 可复现性清单（提交前逐条打勾）
 
 - [ ] 稿件中每个数字都能在 `experiments/<id>/` 找到出处（附录对照表完整）
-- [ ] 所有引用实验均为终态且 `scirearch verify` 通过
+- [ ] 所有引用实验均为终态且 `scirearch verify` 通过（退出码 0）
+- [ ] `report` 标 `[人工]` 的判据已由复核者逐条裁定；未把机器判定写成"结论已验证"
 - [ ] `refuted` / `inconclusive` 结果与 `caveats` 如实呈现
 - [ ] 复现命令从零可跑（新克隆 + `make check` + 单条 `run.sh`）
 - [ ] 环境信息（Python 版本、关键依赖、硬件）与 commit 哈希已记录

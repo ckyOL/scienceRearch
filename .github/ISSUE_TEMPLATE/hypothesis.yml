@@ -36,7 +36,9 @@ body:
     id: criteria
     attributes:
       label: 判据（每行一条）
-      description: 支持/反驳的阈值条件，必须能在 metrics.json 上机械判定
+      description: |
+        可求值形式 `指标 运算符 数值`（如 `std < 0.01`）会由 `scirearch verify`
+        在 metrics.json 上三态求值；其余按自由文本处理，由复核者人工裁定。
       placeholder: |
         std < 0.01
         无 NaN
@@ -52,7 +54,7 @@ body:
     id: falsification
     attributes:
       label: 证伪路径
-      description: 出现什么结果你会放弃该假设（防止事后解释）
+      description: 出现什么结果你会放弃该假设（创建后与判据一起冻结，不可编辑）
     validations:
       required: true
   - type: checkboxes

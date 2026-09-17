@@ -18,6 +18,8 @@ make check             # = ruff format --check + ruff check + pytest + scirearch
 `make fmt` 可直接修复格式问题。实验类改动额外要求：
 
 - 判据先于结果（`preregistered` 状态下不得存在 `metrics.json`）。
+- 预注册（判据 / `hypothesis.md` / 证伪路径）创建后未被编辑（sha256 冻结）。
+- **预注册提交严格早于结果提交**；实验类 PR 用 merge commit / rebase 合并，不要 squash。
 - `seed` 已登记，`logs/` 含非空原始日志，`run.sh` 可执行。
 - 未手工编辑 `metrics.json`。
 - 文档/稿件中的数字可解析到实验产物。
@@ -47,7 +49,9 @@ docs(protocol): 补充负结果保留要求
 
 1. 每个 PR 至少一名非作者评审；涉及实验结果时，评审者须**独立复算**关键数字。
 2. 评审关注顺序：证据完整性 > 结论正确性 > 代码风格。
-3. 破坏性变更（合同收紧、目录结构调整）需在 PR 描述中给出迁移方式。
+3. 含实验的 PR：核对 `scirearch verify` 退出码（0/1/2）与 `report` 中标注 `[人工]` 的判据——
+   后者必须有复核者的裁定记录，不能被当成"已验证"。
+4. 破坏性变更（合同收紧、目录结构调整）需在 PR 描述中给出迁移方式。
 
 ## 安全
 

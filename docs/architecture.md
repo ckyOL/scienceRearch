@@ -10,7 +10,7 @@
 | 执行层 | `.omp/agents/`、`.omp/skills/` | 谁来做：侦察/假设/实验/复现/批判/写作 | 中 |
 | 护栏层 | `.omp/hooks/pre/`、`.omp/RULES.md` | 不可协商的硬约束（数据只读、命令拦截） | 低 |
 | 证据层 | `experiments/`、`data/` | 预注册文档、可重跑入口、日志、指标 | 高（每次实验） |
-| 表达层 | `analysis/`、`paper/` | 从证据重建的图表与稿件 | 高 |
+| 表达层 | `analysis/`、`paper/` | 从证据重建的图表、稿件与自检问题库 | 高 |
 
 依赖方向单向向下：表达层只能引用证据层，证据层只能由执行层产出，护栏层可拦截任何一层的动作，合同层不依赖其他层（纯标准库实现，可在 CI 独立运行）。
 
@@ -18,18 +18,21 @@
 
 ```mermaid
 flowchart TB
-  H["hypothesis.md<br/>（判据先于结果）"] --> M["experiment.json<br/>（manifest + history）"]
+  H["hypothesis.md + criteria + falsification<br/>（创建即冻结：三个 sha256）"] --> M["experiment.json<br/>（manifest + preregistration + history）"]
   M --> R["run.sh<br/>（seed + 唯一 RUN 行）"]
   R --> L["logs/*.log<br/>（非空原始输出）"]
   R --> K["metrics.json<br/>（机器可判定的指标）"]
   L --> V{"scirearch verify"}
   K --> V
   M --> V
-  V -->|通过| P["report → analysis/ → paper/"]
-  V -->|不通过| B["打回：补齐或撤销"]
+  G["git 历史<br/>（预注册提交严格早于结果）"] --> V
+  V -->|"合同 + 判据三态 + 时序"| P["report → analysis/ → paper/"]
+  V -->|"问题(1) / 判据冲突(2)"| B["打回：补齐、改判或撤销"]
 ```
 
-`experiment.json` 是唯一机读真相源；`hypothesis.md` 是它的可读镜像（给人与 agent 看）。二者由 `scirearch new` 同时生成，**不允许只改其中一个**。
+`experiment.json` 是唯一机读真相源；`hypothesis.md` 是它的可读镜像（给人与 agent 看）。
+二者由 `scirearch new` 同时生成并登记哈希，**任何事后修改都会被检出**；git 历史另行证明
+预注册提交严格早于结果提交（同一提交即违规）。
 
 ## 3. 目录职责
 
@@ -37,10 +40,10 @@ flowchart TB
 | --- | --- | --- | --- |
 | `data/raw/` | 人工导入脚本 | agent 写入（hook 拦截） | 永久只读 |
 | `data/{interim,processed}/` | 实验脚本 | 手工修补 | 可重建，不入库 |
-| `experiments/<id>/` | `experimenter` / `replicator` | 手改 `metrics.json` | 永久（证据） |
+| `experiments/<id>/` | `experimenter` / `replicator` | 手改 `metrics.json`；编辑 `hypothesis.md` 或判据（哈希冻结） | 永久（证据） |
 | `analysis/` | `writer` / 人 | 手写数字（必须由脚本产出） | 可重建 |
 | `paper/` | `writer` | 引用未验证产物 | 版本化 |
-| `notes/` | 任何 agent | — | 可丢弃 |
+| `notes/` | 任何 agent | —（死路归档须引用实验 id 或可寻址证据） | 可丢弃（但建议保留索引） |
 | `.omp/` | 人 | 实验产出 | 低频演进 |
 
 ## 4. omp 机制落点
@@ -64,4 +67,8 @@ flowchart TB
 2. **不用 `checkpoint` 做文件快照**：omp 的 `checkpoint`/`rewind` 只记录对话状态，不含工作区（`omp://tools/checkpoint.md` 明确说明）。文件级回滚用 git 与 `isolated` 分支。
 3. **日志入库**：`logs/` 是终态的必要证据，默认提交；超大日志走外部存储 + 在 manifest 登记 hash（见 `experiments/README.md`）。
 4. **合同用标准库实现**：`scirearch` 零运行时依赖，保证在任意 CI/子agent 环境可执行，不因依赖漂移而静默失效。
-5. **状态机而非自由字段**：`preregistered → running → {completed, refuted, inconclusive, abandoned}`。终态不可回退；每次变更留 `history`。这使"事后改判据"在结构上不可能。
+5. **状态机而非自由字段**：`preregistered → running → {completed, refuted, inconclusive, abandoned}`。终态不可回退；每次变更留 `history`。配合预注册哈希与 git 时序，"事后改判据"在结构上不可能——改内容、重算哈希、改状态各有独立检查。
+6. **判据机械化，人工兜底显式化**：可求值判据（`指标 运算符 数值`）由 `verify` 三态求值，`report` 标 `[机器]`；自由文本判据标 `[人工]`。二者不合并——机器判定是完整性控制，不是 attestation（借鉴 ArmProof 的自我限定与 honest-signal 的数字二分）。
+7. **允许负结果与负知识**：`refuted`/`inconclusive` 与 `completed` 同等的证据要求；被证伪判据按 `criteria_sha256` 进入负知识索引，重提必须携带新证据（借鉴 dsh-research-report）。
+8. **自检先于自夸**：`analysis/known-truth/` 用已知真值（含零效应）问题度量"预注册 + 独立复核"相对裸 agent 的收益；结论为负照样按终态归档（借鉴 nullius 的已知真值自证）。
+9. **项目级预测同样可证伪**：`docs/project-preregistration.md` 登记项目主张、kill 判据与到期判定命令，到期按判据执行，不做事后合理化（借鉴 honest-signal 的自注册 kill 判据）。
