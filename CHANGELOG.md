@@ -30,6 +30,8 @@
 - CI `experiment contract` job 改用 `fetch-depth: 0`；模板使用说明新增"把该 job 设为 required
   status check"这一步。
 - 实验协议、架构、omp 设施（RULES / WATCHDOG / experimenter / critic / replicator / skill）同步更新。
+- 仓库开启 GitHub **Template repository**（`is_template=true`）；README 增补"用它作为模板"
+  （`gh repo create --template`）与模板后必做步骤（占位符、上游专属 kill 判据、required check）。
 - 调研文档（[docs/research-agent-with-omp.md](docs/research-agent-with-omp.md)）增补：GitHub 开源生态对照（§1.1，含同题项目机制表）、借鉴清单与落地优先级（§7）、参考区生态项目列表、§7 实施进度。
 
 ### 迁移

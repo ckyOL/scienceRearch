@@ -124,15 +124,31 @@ flowchart LR
 | [docs/project-preregistration.md](docs/project-preregistration.md) | 项目级主张与自注册 kill 判据（什么会杀死本项目、到期怎么判定） |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 本地开发、提交规范、评审要求 |
 
-## 作为模板使用时
+## 用它作为模板
 
-克隆后需做 3 件事：
+本仓库已开启 GitHub **Template repository**（`is_template=true`）。点仓库页面的 **Use this template →
+Create a new repository**，或：
 
-1. 替换仓库地址占位符：README 徽章、`pyproject.toml`（`Homepage` / `Issues`）、`CITATION.cff`、`CHANGELOG.md` 链接、`.github/ISSUE_TEMPLATE/config.yml`，本仓库已统一指向 `ckyOL/scienceRearch`。
+```bash
+gh repo create my-research --template ckyOL/scienceRearch --public --clone
+```
+
+模板实例只复制文件、**不带上游 commit 历史**——正好让 git 时序防火墙从你自己的第一次提交开始记账
+（克隆上游历史也不会坏事，只是没必要）。
+
+建库后必做 4 件事：
+
+1. 替换仓库地址占位符：README 徽章、`pyproject.toml`（`Homepage` / `Issues`）、`CITATION.cff`、
+   `CHANGELOG.md` 链接、`.github/ISSUE_TEMPLATE/config.yml`，本仓库统一指向 `ckyOL/scienceRearch`。
 2. 替换 `LICENSE` 与 `CITATION.cff` 中的版权/作者信息（默认 `ScienceRearch contributors`，可整体替换）。
-3. **启用分支保护**：把 CI 的 `experiment contract` 设为 main 的 required status check
+3. 替换或删除 [docs/project-preregistration.md](docs/project-preregistration.md) 中**上游专属**的主张
+   （外部采纳、`gh api` 判定命令、到期日）为你自己的项目主张；按该文件 §4 的修订规则在 CHANGELOG 留痕。
+4. **启用分支保护**：把 CI 的 `experiment contract` 设为 main 的 required status check
    （`gh api -X PUT repos/{owner}/{repo}/branches/main/protection -F "required_status_checks[strict]=true" -F "required_status_checks[contexts][]=experiment contract"`）。
    没被依赖的闸门只是日志行——见 [docs/experiment-protocol.md §6](docs/experiment-protocol.md)。
+   分支保护**不会随模板复制**，必须在新仓库里重设。
+
+按需调整：`.omp/config.yml` 的 `modelRoles`（换成你能用的模型）、`analysis/known-truth/`（可直接跑）。
 
 举报渠道走 GitHub 原生机制，无邮箱：安全与行为准则报告见 [SECURITY.md](SECURITY.md) 与 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)（私有漏洞报告 + GitHub Report abuse）。
 
