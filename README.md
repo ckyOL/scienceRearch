@@ -22,6 +22,9 @@ seed 与日志强制留痕、状态机禁止跳步、git 时序证明判据先�
 
 ## 快速开始
 
+第一次拿到仓库：**先读 [docs/getting-started.md](docs/getting-started.md)**（前置条件、omp 角色与护栏配置、
+端到端第一次实验走查、故障排查表）。下面是命令速览。
+
 ```bash
 # 方式 A：uv（推荐）
 uv sync --dev
@@ -118,6 +121,7 @@ flowchart LR
 
 | 文档 | 内容 |
 | --- | --- |
+| [docs/getting-started.md](docs/getting-started.md) | **使用指南**：前置条件、omp 模型角色与护栏配置、端到端第一次实验、故障排查、命令速查 |
 | [docs/research-agent-with-omp.md](docs/research-agent-with-omp.md) | 领域调研：AI Scientist v1/v2、Co-Scientist、PaperBench/MLE-bench、验证缺口；开源生态对照（§1.1）与借鉴清单（§7） |
 | [docs/architecture.md](docs/architecture.md) | 目录职责、数据流、omp 机制映射、为什么这样摆 |
 | [docs/experiment-protocol.md](docs/experiment-protocol.md) | 实验 SOP：预注册哈希、判据三态、seed、日志、状态推进、退出码、复核与写作闸门 |

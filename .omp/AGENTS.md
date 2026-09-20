@@ -13,7 +13,7 @@
 | `analysis/` | 从 `experiments/` 重建的统计与图表；`known-truth/` 为自检问题库（真值区求解者不得读） |
 | `paper/` | 稿件 |
 | `notes/` | 探索笔记与死路归档（`dead-ends/`，不构成证据） |
-| `docs/` | 调研、架构、实验协议、项目级预注册与 kill 判据 |
+| `docs/` | 调研、架构、实验协议、使用指南（`getting-started.md`：配置/协作/故障排查）、项目级预注册与 kill 判据 |
 
 ## 常用命令
 

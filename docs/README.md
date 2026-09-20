@@ -2,6 +2,7 @@
 
 | 文档 | 面向谁 | 内容 |
 | --- | --- | --- |
+| [getting-started.md](getting-started.md) | 新人 | **使用指南**：第一次拿到仓库怎么配（前置条件、omp `modelRoles`、护栏位置、required check）、怎么用（端到端第一次实验、与子agent 协作）、出问题怎么办（实测报错 → 处理） |
 | [research-agent-with-omp.md](research-agent-with-omp.md) | 全体 | 领域调研：AI Scientist v1/v2、Co-Scientist、PaperBench、MLE-bench、验证缺口；开源生态对照（§1.1）与借鉴清单（§7）；omp 能力映射与子agent 体系 |
 | [architecture.md](architecture.md) | 贡献者 | 目录职责、数据流、omp 机制落点、设计取舍 |
 | [experiment-protocol.md](experiment-protocol.md) | 实验执行者 | 预注册哈希、判据三态、seed、日志、状态推进、退出码、复核与写作闸门 |

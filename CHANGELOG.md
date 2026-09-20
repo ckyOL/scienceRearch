@@ -7,6 +7,9 @@
 
 ### 新增
 
+- **使用指南**（[docs/getting-started.md](docs/getting-started.md)）：首次配置（前置条件、`modelRoles`
+  角色映射、护栏加载位置、required check）、端到端第一次实验走查（含预检与终态选择）、与子agent 协作的
+  硬约束、**实测报错 → 处理**的故障排查表、命令速查与不变量清单。
 - **预注册冻结（manifest schema v2）**：`scirearch new` 要求 `-f/--falsification`，并把 `criteria`、
   `hypothesis.md` 与预注册记录（假设/指标/判据/证伪路径/seed）的三个 sha256 写入 manifest；
   `verify` 检出任何事后修改。
@@ -24,6 +27,9 @@
 
 ### 变更
 
+- `run.sh` 模板改为 `export SEED`：此前 `SEED` 只作为 shell 变量赋值，脚本读 `os.environ["SEED"]`
+  会失败，只有在 `RUN=` 里显式引用 `${SEED}` 才能拿到 seed。现在两种写法都成立（模板注释里的
+  "seed 导出" 与实现一致）。
 - `scirearch new` 的证伪路径不再是"事后填写"的提示，而是预注册的一部分（必填、冻结）。
 - `scirearch status` 在推进后立即回显合同问题；`scirearch report` 增列判据判定、负知识索引与
   机器/人工标注（完整性控制 ≠ attestation）。

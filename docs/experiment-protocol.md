@@ -1,5 +1,8 @@
 # 实验协议
 
+第一次使用本仓库（环境、omp 角色与护栏配置、端到端走查、故障排查）先读
+[getting-started.md](getting-started.md)；本文是契约细节。
+
 适用对象：人类研究者、`experimenter`/`replicator` 子agent、以及任何自动化流水线。
 违反协议的产物不会被 `scirearch verify` 接受，也不会被 `writer` 引用。
 
