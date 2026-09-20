@@ -62,7 +62,7 @@ RUN_SH_TEMPLATE = """#!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SEED="${{SEED:-{seed}}}"
+export SEED="${{SEED:-{seed}}}"
 RUN="{default_run}"   # <-- 唯一需要修改的行
 
 export PYTHONHASHSEED=0
