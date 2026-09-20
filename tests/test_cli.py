@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from scirearch.cli import main
+from scirearch.experiment import load_manifest, save_manifest
 
 
 def _new(root: Path, *extra: str) -> int:
@@ -28,13 +29,20 @@ def _new(root: Path, *extra: str) -> int:
     )
 
 
-def _finish(root: Path, status: str, metrics: str) -> int:
+def _write_evidence(root: Path, metrics: str) -> Path:
+    """写 metrics.json 与一条非空原始日志，返回 metrics 路径。"""
     exp_dir = root / "experiments" / "exp-0001-baseline"
-    (exp_dir / "metrics.json").write_text(metrics, encoding="utf-8")
+    path = exp_dir / "metrics.json"
+    path.write_text(metrics, encoding="utf-8")
     logs = exp_dir / "logs"
     logs.mkdir(exist_ok=True)
     (logs / "run-1.log").write_text("epoch 1 accuracy 0.9\n", encoding="utf-8")
-    current = json.loads((exp_dir / "experiment.json").read_text(encoding="utf-8"))["status"]
+    return path
+
+
+def _finish(root: Path, status: str, metrics: str) -> int:
+    path = _write_evidence(root, metrics)
+    current = load_manifest(path.parent)["status"]
     if current == "preregistered":
         assert main(["--root", str(root), "status", "exp-0001", "running"]) == 0
     return main(
@@ -45,11 +53,23 @@ def _finish(root: Path, status: str, metrics: str) -> int:
             "exp-0001",
             status,
             "--metrics",
-            str(exp_dir / "metrics.json"),
+            str(path),
             "--reason",
             "测试",
         ]
     )
+
+
+def _force_terminal(root: Path, status: str, metrics: str) -> None:
+    """绕过 CLI 写下终态：模拟旧版 CLI / 手工编辑，用于验证 verify 的检出能力。"""
+    path = _write_evidence(root, metrics)
+    exp_dir = path.parent
+    manifest = load_manifest(exp_dir)
+    if manifest["status"] == "preregistered":
+        manifest["history"].append({"status": "running", "actor": "cli"})
+    manifest["status"] = status
+    manifest["history"].append({"status": status, "actor": "cli", "metrics": str(path)})
+    save_manifest(exp_dir, manifest)
 
 
 def test_new_then_verify_round_trip(tmp_path: Path, capsys) -> None:
@@ -85,7 +105,8 @@ def test_verify_json_reports_violations(tmp_path: Path, capsys) -> None:
 def test_verify_exit_code_two_for_criteria_conflict(tmp_path: Path, capsys) -> None:
     _new(tmp_path)
     capsys.readouterr()
-    assert _finish(tmp_path, "completed", '{"std": 0.42}') == 0
+    # 绕过 CLI 写下终态（旧版 CLI 允许"先写后报"）：verify 仍须检出并退出码 2。
+    _force_terminal(tmp_path, "completed", '{"std": 0.42}')
     capsys.readouterr()
 
     assert main(["--root", str(tmp_path), "verify", "--json"]) == 2
@@ -124,18 +145,80 @@ def test_status_transition_from_cli_requires_metrics(tmp_path: Path, capsys) -> 
     assert exp_dir.is_dir()
 
 
-def test_status_reports_contract_failures_immediately(tmp_path: Path, capsys) -> None:
-    _new(tmp_path)
+def test_status_refuses_verdict_that_contradicts_criteria(tmp_path: Path, capsys) -> None:
+    _new(tmp_path, "--seed", "1729")  # 判据：std < 0.01
     capsys.readouterr()
+    metrics = _write_evidence(tmp_path, '{"std": 0.42}')
+    exp_dir = metrics.parent
+    assert main(["--root", str(tmp_path), "status", "exp-0001", "running"]) == 0
 
-    assert _finish(tmp_path, "completed", '{"std": 0.42}') == 0
+    code = main(
+        ["--root", str(tmp_path), "status", "exp-0001", "completed", "--metrics", str(metrics)]
+    )
     err = capsys.readouterr().err
+    manifest = load_manifest(exp_dir)
 
+    assert code == 2  # 判据冲突：与 verify 的退出码语义一致
     assert "判据被违反却标记为 completed" in err
+    # 状态未变更：终态不可回退，绝不能把冲突写进 history。
+    assert manifest["status"] == "running"
+    assert [entry["status"] for entry in manifest["history"]] == ["preregistered", "running"]
+
+
+def test_status_refuses_refutation_when_criteria_all_hold(tmp_path: Path, capsys) -> None:
+    _new(tmp_path, "--seed", "1729")
+    capsys.readouterr()
+    metrics = _write_evidence(tmp_path, '{"std": 0.0031}')
+    assert main(["--root", str(tmp_path), "status", "exp-0001", "running"]) == 0
+
+    code = main(
+        ["--root", str(tmp_path), "status", "exp-0001", "refuted", "--metrics", str(metrics)]
+    )
+
+    assert code == 2
+    assert "全部满足却标记为 refuted" in capsys.readouterr().err
+    assert load_manifest(metrics.parent)["status"] == "running"
+
+
+def test_status_refuses_terminal_state_without_raw_logs(tmp_path: Path, capsys) -> None:
+    _new(tmp_path, "--seed", "1729")
+    capsys.readouterr()
+    exp_dir = tmp_path / "experiments" / "exp-0001-baseline"
+    metrics = exp_dir / "metrics.json"
+    metrics.write_text('{"std": 0.0031}', encoding="utf-8")  # 判据满足，但没有原始日志
+    assert main(["--root", str(tmp_path), "status", "exp-0001", "running"]) == 0
+
+    code = main(
+        ["--root", str(tmp_path), "status", "exp-0001", "completed", "--metrics", str(metrics)]
+    )
+
+    assert code == 1  # 合同非法（证据缺失）
+    assert "原始日志" in capsys.readouterr().err
+    assert load_manifest(exp_dir)["status"] == "running"
+
+
+def test_status_requires_metrics_at_the_canonical_path(tmp_path: Path, capsys) -> None:
+    _new(tmp_path, "--seed", "1729")
+    capsys.readouterr()
+    exp_dir = tmp_path / "experiments" / "exp-0001-baseline"
+    outside = tmp_path / "metrics.json"  # verify 只读实验目录内的 metrics.json
+    outside.write_text('{"std": 0.0031}', encoding="utf-8")
+    logs = exp_dir / "logs"
+    logs.mkdir(exist_ok=True)
+    (logs / "run-1.log").write_text("epoch 1 accuracy 0.9\n", encoding="utf-8")
+    assert main(["--root", str(tmp_path), "status", "exp-0001", "running"]) == 0
+
+    code = main(
+        ["--root", str(tmp_path), "status", "exp-0001", "completed", "--metrics", str(outside)]
+    )
+
+    assert code == 1
+    assert "终态缺少 metrics.json" in capsys.readouterr().err
+    assert load_manifest(exp_dir)["status"] == "running"
 
 
 def test_report_json_lists_experiments_and_negative_knowledge(tmp_path: Path, capsys) -> None:
-    _new(tmp_path)
+    _new(tmp_path, "--seed", "1729")
     capsys.readouterr()
     assert _finish(tmp_path, "refuted", '{"std": 0.42}') == 0
     capsys.readouterr()
@@ -149,7 +232,7 @@ def test_report_json_lists_experiments_and_negative_knowledge(tmp_path: Path, ca
 
 
 def test_reproposed_refuted_criteria_warns_and_records(tmp_path: Path, capsys) -> None:
-    _new(tmp_path)
+    _new(tmp_path, "--seed", "1729")
     capsys.readouterr()
     assert _finish(tmp_path, "refuted", '{"std": 0.42}') == 0
 

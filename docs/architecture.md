@@ -67,7 +67,7 @@ flowchart TB
 2. **不用 `checkpoint` 做文件快照**：omp 的 `checkpoint`/`rewind` 只记录对话状态，不含工作区（`omp://tools/checkpoint.md` 明确说明）。文件级回滚用 git 与 `isolated` 分支。
 3. **日志入库**：`logs/` 是终态的必要证据，默认提交；超大日志走外部存储 + 在 manifest 登记 hash（见 `experiments/README.md`）。
 4. **合同用标准库实现**：`scirearch` 零运行时依赖，保证在任意 CI/子agent 环境可执行，不因依赖漂移而静默失效。
-5. **状态机而非自由字段**：`preregistered → running → {completed, refuted, inconclusive, abandoned}`。终态不可回退；每次变更留 `history`。配合预注册哈希与 git 时序，"事后改判据"在结构上不可能——改内容、重算哈希、改状态各有独立检查。
+5. **状态机而非自由字段**：`preregistered → running → {completed, refuted, inconclusive, abandoned}`。终态不可回退；每次变更留 `history`。配合预注册哈希与 git 时序，"事后改判据"在结构上不可能——改内容、重算哈希、改状态各有独立检查。状态推进前还会按目标状态模拟一次 `verify`：会被判失败的终态**不会被写入**（终态不可回退，先写后报等于把实验钉死）。
 6. **判据机械化，人工兜底显式化**：可求值判据（`指标 运算符 数值`）由 `verify` 三态求值，`report` 标 `[机器]`；自由文本判据标 `[人工]`。二者不合并——机器判定是完整性控制，不是 attestation（借鉴 ArmProof 的自我限定与 honest-signal 的数字二分）。
 7. **允许负结果与负知识**：`refuted`/`inconclusive` 与 `completed` 同等的证据要求；被证伪判据按 `criteria_sha256` 进入负知识索引，重提必须携带新证据（借鉴 dsh-research-report）。
 8. **自检先于自夸**：`analysis/known-truth/` 用已知真值（含零效应）问题度量"预注册 + 独立复核"相对裸 agent 的收益；结论为负照样按终态归档（借鉴 nullius 的已知真值自证）。

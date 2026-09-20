@@ -113,6 +113,27 @@ class ExperimentError(Exception):
     """合同层错误：参数非法、状态转移非法、manifest 损坏等。"""
 
 
+class StatusRejected(ExperimentError):
+    """目标状态会被 `scirearch verify` 判失败：拒绝写入。
+
+    终态不可回退，若先把状态写下去再报告问题，实验就被永久钉在"判据冲突/证据缺失"上，
+    既不合法也无法改判。因此 `set_status` 在写入前用它中止。
+    """
+
+    def __init__(
+        self,
+        status: str,
+        *,
+        conflicts: tuple[str, ...] = (),
+        problems: tuple[str, ...] = (),
+    ) -> None:
+        self.status = status
+        self.conflicts = conflicts
+        self.problems = problems
+        detail = "；".join((*conflicts, *problems))
+        super().__init__(f"拒绝写入状态 {status}（状态未变更）：{detail}")
+
+
 def utc_now() -> str:
     """返回秒级精度的 UTC ISO-8601 时间戳（以 Z 结尾）。"""
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -328,6 +349,25 @@ def create_experiment(
     return exp_dir
 
 
+def _reject_unverifiable_status(exp_dir: Path, new_status: str) -> None:
+    """写入前模拟目标状态：任何会被 `scirearch verify` 判失败的推进都拒绝。
+
+    终态不可回退，所以"先写状态、再回显问题"会把实验永久钉在一个不合法的状态上
+    （既无法通过 verify，也无法改判 refuted/inconclusive）。
+
+    延迟导入是刻意的：`verify` 依赖本模块，模块级导入会成环。
+    """
+    from scirearch.verify import check_experiment
+
+    result = check_experiment(exp_dir, pending_status=new_status)
+    if result.inconsistencies or result.problems:
+        raise StatusRejected(
+            new_status,
+            conflicts=result.inconsistencies,
+            problems=result.problems,
+        )
+
+
 def load_manifest(exp_dir: Path) -> dict[str, Any]:
     """读取并解析 manifest；失败时抛出带路径的 ExperimentError。"""
     path = exp_dir / "experiment.json"
@@ -382,6 +422,7 @@ def set_status(
             raise ExperimentError(f"指标文件不是合法 JSON：{metrics_path}（{exc}）") from exc
         if not isinstance(metrics, dict) or not metrics:
             raise ExperimentError(f"指标文件必须是非空 JSON 对象：{metrics_path}")
+    _reject_unverifiable_status(exp_dir, new_status)
     entry: dict[str, Any] = {"status": new_status, "at": utc_now(), "actor": "cli"}
     if reason:
         entry["reason"] = reason

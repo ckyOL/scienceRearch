@@ -171,6 +171,16 @@ def _check_history(manifest: dict[str, Any], status: str, state: _State) -> None
         )
 
 
+def _with_pending_status(manifest: dict[str, Any], status: str) -> dict[str, Any]:
+    """返回"若此刻写入 status"的 manifest 投影：不落盘，只让后续检查按目标状态求值。"""
+    projected = dict(manifest)
+    projected["status"] = status
+    history = manifest.get("history")
+    if isinstance(history, list):
+        projected["history"] = [*history, {"status": status, "actor": "pending"}]
+    return projected
+
+
 def _check_preregistration(exp_dir: Path, manifest: dict[str, Any], state: _State) -> None:
     """预注册 = 不变量：重算创建时登记的 hash，任何漂移都判失败。"""
     block = manifest.get("preregistration")
@@ -373,8 +383,12 @@ def _check_git_firewall(
             )
 
 
-def check_experiment(exp_dir: Path) -> CheckResult:
-    """校验单个实验目录，返回结构化结果（不抛异常）。"""
+def check_experiment(exp_dir: Path, *, pending_status: str | None = None) -> CheckResult:
+    """校验单个实验目录，返回结构化结果（不抛异常）。
+
+    `pending_status` 供 `set_status` 在**写入前**模拟目标状态：按该状态求值证据与判据一致性，
+    使 CLI 能拒绝一个会被本函数判失败的推进。终态不可回退，"先写后报"等于把冲突永久钉死。
+    """
     state = _State()
     name = exp_dir.name
     exp_id = name.split("-", 1)[0] if name.startswith(f"{ID_PREFIX}-") else name
@@ -395,6 +409,8 @@ def check_experiment(exp_dir: Path) -> CheckResult:
             warnings=tuple(state.warnings),
         )
 
+    if pending_status is not None:
+        manifest = _with_pending_status(manifest, pending_status)
     status = _check_manifest_shape(manifest, state)
     _check_history(manifest, status, state)
     _check_preregistration(exp_dir, manifest, state)

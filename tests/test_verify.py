@@ -53,6 +53,26 @@ def _write_log(exp_dir: Path, text: str = "epoch 1 accuracy 0.9\n") -> None:
     (logs / "run-1.log").write_text(text, encoding="utf-8")
 
 
+def _force_status(exp_dir: Path, status: str, *, metrics_path: Path | None = None) -> None:
+    """绕过 CLI 直接写下状态：模拟旧版 CLI / 手工编辑，用于验证 verify 的检出能力。"""
+    manifest = load_manifest(exp_dir)
+    if manifest["status"] == "preregistered":
+        manifest["history"].append({"status": "running", "actor": "cli"})
+    manifest["status"] = status
+    entry: dict[str, object] = {"status": status, "actor": "cli"}
+    if metrics_path is not None:
+        entry["metrics"] = str(metrics_path)
+    manifest["history"].append(entry)
+    save_manifest(exp_dir, manifest)
+
+
+def _force_terminal(exp_dir: Path, status: str, *, metrics: dict[str, object]) -> None:
+    """写齐 metrics 与日志后绕过 CLI 落终态（供"状态与判据冲突"类用例构造现场）。"""
+    path = _write_metrics(exp_dir, metrics)
+    _write_log(exp_dir)
+    _force_status(exp_dir, status, metrics_path=path)
+
+
 def _run_to_terminal(exp_dir: Path, status: str, *, metrics: dict[str, object]) -> None:
     path = _write_metrics(exp_dir, metrics)
     _write_log(exp_dir)
@@ -83,7 +103,7 @@ def test_terminal_status_requires_seed_logs_and_metrics(tmp_path: Path) -> None:
     exp_dir = _preregister(tmp_path)
     metrics = _write_metrics(exp_dir)
     set_status(exp_dir, "running")
-    set_status(exp_dir, "completed", metrics_path=metrics)
+    _force_status(exp_dir, "completed", metrics_path=metrics)  # 旧版 CLI 允许无日志的终态
 
     result = check_experiment(exp_dir)
     assert not result.ok
@@ -98,7 +118,7 @@ def test_terminal_without_seed_fails(tmp_path: Path) -> None:
     metrics = _write_metrics(exp_dir)
     _write_log(exp_dir)
     set_status(exp_dir, "running")
-    set_status(exp_dir, "completed", metrics_path=metrics)
+    _force_status(exp_dir, "completed", metrics_path=metrics)
 
     result = check_experiment(exp_dir)
 
@@ -121,7 +141,7 @@ def test_empty_log_file_does_not_count_as_evidence(tmp_path: Path) -> None:
     metrics = _write_metrics(exp_dir)
     _write_log(exp_dir, text="")
     set_status(exp_dir, "running")
-    set_status(exp_dir, "completed", metrics_path=metrics)
+    _force_status(exp_dir, "completed", metrics_path=metrics)
 
     result = check_experiment(exp_dir)
 
@@ -154,7 +174,7 @@ def test_hand_edited_status_is_detected_via_history(tmp_path: Path) -> None:
 
 def test_completed_with_violated_criterion_is_a_conflict(tmp_path: Path) -> None:
     exp_dir = _preregister(tmp_path)
-    _run_to_terminal(exp_dir, "completed", metrics={"std": 0.42})
+    _force_terminal(exp_dir, "completed", metrics={"std": 0.42})
 
     result = check_experiment(exp_dir)
 
@@ -177,7 +197,7 @@ def test_refuted_with_violated_criterion_passes(tmp_path: Path) -> None:
 
 def test_refuted_with_all_criteria_satisfied_is_a_conflict(tmp_path: Path) -> None:
     exp_dir = _preregister(tmp_path)
-    _run_to_terminal(exp_dir, "refuted", metrics={"std": 0.0031})
+    _force_terminal(exp_dir, "refuted", metrics={"std": 0.0031})
 
     result = check_experiment(exp_dir)
 
@@ -187,7 +207,7 @@ def test_refuted_with_all_criteria_satisfied_is_a_conflict(tmp_path: Path) -> No
 
 def test_criterion_referencing_missing_metric_is_a_contract_problem(tmp_path: Path) -> None:
     exp_dir = _preregister(tmp_path)
-    _run_to_terminal(exp_dir, "completed", metrics={"other": 1})
+    _force_terminal(exp_dir, "completed", metrics={"other": 1})
 
     result = check_experiment(exp_dir)
 

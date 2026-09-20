@@ -115,7 +115,23 @@ scirearch status experiments/exp-0001-fixed-seed-baseline completed \
 | 终态（`completed`/`refuted`/`inconclusive`/`abandoned`） | 不可变更 |
 
 `refuted` / `inconclusive` **同样需要完整证据**（日志 + seed）——负结果是最容易被悄悄丢弃的资产。
-`status` 会立刻回显合同问题（如有），完整报告用：
+
+**写入前闸门（先模拟，后落盘）：** `status` 在写入前按目标状态模拟一次完整校验，任何会被
+`scirearch verify` 判失败的推进**直接拒绝、状态不变**，退出码与 verify 同语义：
+
+| 退出码 | 触发 | 例 |
+| --- | --- | --- |
+| `1` | 合同非法（证据/预注册/时序） | 判据满足但 `logs/` 为空；终态缺 seed；`--metrics` 不在 `experiments/<id>/metrics.json` |
+| `2` | 判据冲突 | 判据被违反却写 `completed`；判据全部满足却写 `refuted` |
+
+这条闸门存在的理由：**终态不可回退**。若"先写状态、再回显问题"，实验会被永久钉在一个不合法的
+状态上——既过不了 `verify`，也无法改判 `refuted`/`inconclusive`，只能重建实验。
+因此正确用法是：`verify <实验目录>` 先看清判据三态（`running` 状态下即可查看），再选终态。
+
+`--metrics` 必须指向 `experiments/<id>/metrics.json`：**`verify` 只读这个规范路径**，
+把指标文件放在别处虽然能被 `status` 读到，但会被判为"终态缺少 metrics.json"。
+
+完整报告用：
 
 ```bash
 scirearch verify                 # 全部实验
@@ -208,7 +224,8 @@ omp 侧：`critic`（只读批判）与 `replicator`（干净工作区重跑）�
 | 预注册与结果挤进同一提交（含 squash 合并） | git 时序违规 | 拆成两次提交；实验类 PR 用 merge/rebase |
 | 手改 `metrics.json` | 证据链断裂 | 重跑；数字一律由 `run.sh` 产出 |
 | 只保留汇总日志 | 无法回溯 | 重新执行并保留原始 stdout |
-| `completed` 但判据被违反（或反之） | 判据冲突（退出码 2） | 改判 `refuted`/`inconclusive`，或修正证据 |
+| `completed` 但判据被违反（或反之） | 判据冲突（退出码 2） | `status` 已在写入前拒绝；改判 `refuted`/`inconclusive`，或修正证据。仅当状态是绕过 CLI（旧版 CLI / 手工编辑）写下时才需要重建实验 |
+| 试图写下会被 `verify` 判失败的终态 | `status` 拒绝，退出码 1（合同）或 2（判据冲突），状态不变 | 先 `verify <实验目录>` 预检；按提示补证据或改判状态 |
 | 可求值判据引用的指标缺失 | 合同问题 | 让 `run.sh` 产出该指标，或把判据降级为自由文本 |
 | 丢弃 refuted 结果 | 选择性报告 | 保留为终态；report 中如实呈现 |
 | 用强模型既生成又复核 | 自我一致性偏差 | 换 agent/模型/上下文重审 |

@@ -103,7 +103,7 @@ checkpoint:
 | --- | --- | --- |
 | `data/raw/` | 仅人工导入脚本 | 写入/删除/移动/解包/重定向（hook 拦截；绕过即安全事件） |
 | `metrics.json` | 只能由 `run.sh` 产出 | 手工编辑（证据链断裂，数字不可信） |
-| `experiment.json` 的 `status` | 只能由 `scirearch status` 改 | 直接编辑（`history` 与 `status` 不一致会被 `verify` 检出） |
+| `experiment.json` 的 `status` | 只能由 `scirearch status` 改（写入前会被闸门校验） | 直接编辑（`history` 与 `status` 不一致会被 `verify` 检出） |
 | `hypothesis.md` / 判据 / 证伪路径 / seed | 创建时一次性写入 | 创建后任何编辑（sha256 漂移，`verify` 退出码 1） |
 | `paper/`、`docs/`、汇报里的数字 | 必须能解析到 `experiments/<id>/` 的产物 | 手写数字 |
 
@@ -196,7 +196,7 @@ runs: [0.90397, 0.8975, 0.89986, 0.89798, 0.8971]
 原始 stdout/stderr 落盘到 `logs/run-<UTC 时间戳>.log`；`metrics.json` 由脚本写出（禁止手改）。
 长跑任务（训练/仿真）请交给 omp 托管（`hub op:"start"`，见 §4.3），不要占着交互会话。
 
-### 步骤 5 · 预检（**在定终态之前**）
+### 步骤 5 · 预检（推荐，但不再是唯一防线）
 
 ```bash
 uv run scirearch status exp-0001 running
@@ -213,7 +213,7 @@ uv run scirearch verify experiments/exp-0001-fixed-seed-baseline
 - exp-0001 `无 NaN` → 人工裁定（自由文本判据）[人工]
 ```
 
-`running` 状态下 `verify` 就会给出判据的三态结果（退出码 0）——**先看清再定终态**。
+`running` 状态下 `verify` 就会给出判据的三态结果（退出码 0）——看清了再定终态。
 
 ### 步骤 6 · 定终态
 
@@ -225,15 +225,18 @@ uv run scirearch status exp-0001 completed \
 
 | 目标状态 | 何时用 | 机器检查 |
 | --- | --- | --- |
-| `completed` | 可求值判据**全部满足** | 出现违反即判"判据冲突"（`verify` 退出码 2） |
+| `completed` | 可求值判据**全部满足** | 出现违反即判"判据冲突"（退出码 2） |
 | `refuted` | **至少一条**可求值判据被违反 | 全部满足却报 `refuted` 同样冲突 |
 | `inconclusive` | 判据无法裁决、证据不足，或假设被别的观察否定 | 合法终态，证据要求与 `completed` 相同 |
-| `abandoned` | 主动放弃（未产出结论） | 同样写入 `history` |
+| `abandoned` | 主动放弃（未产出结论） | 同样要求 metrics + 日志 + seed |
 
-> **终态不可回退。** `scirearch status` 是"记录你的决定"，不是"帮你检查决定"：如果判据被违反却写了
-> `completed`，命令**仍返回 0**（只在 stderr 回显 `合同未通过：判据被违反却标记为 completed`），
-> 而实验已被钉在终态——`verify` 从此退出码 2，且**无法改判** `refuted`，只能按原始判据新建实验。
-> 所以定终态前一定先做步骤 5 的预检。
+> **`status` 是闸门，不是记事本。** 写入前它会按目标状态模拟一次完整校验：**任何会被 `verify`
+> 判失败的推进直接拒绝，状态保持不变**——退出码 `1`（合同非法：缺日志/缺 seed/`--metrics` 不在规范路径…）
+> 或 `2`（判据冲突）。这是必须的：**终态不可回退**，若先写状态再报问题，实验会被永久钉在一个不合法的
+> 状态上，既过不了 `verify` 也无法改判，只能重建。
+>
+> `--metrics` 必须是 `experiments/<id>/metrics.json`：**`verify` 只读这个路径**（放在别处会被判"终态缺少
+> metrics.json"）。
 
 ### 步骤 7 · 提交结果，让时序检查转绿
 
@@ -317,16 +320,20 @@ uv run scirearch verify <实验目录>    # 单个实验
 | `❌ 预注册漂移：criteria 的 sha256 与登记值不一致` | 事后改了判据 | 撤销改动；确需新判据 → 新建实验 |
 | `❌ 预注册漂移：hypothesis.md 的 sha256 …（预注册镜像创建后不得编辑）` | 编辑了人读镜像 | 同上（连加注释、改标点也会被抓） |
 | `❌ 预注册漂移：hypothesis/metric/criteria/falsification/seed 与登记哈希不一致` | 改了 manifest 里的预注册字段（含"改完重算哈希"） | 撤销；git 冻结提交另有独立检查 |
-| `❗ 判据被违反却标记为 completed … 应改判 refuted` | 终态与判据不一致 | 终态不可回退：旧目录保留现状（它本身就是"判据冲突"的证据），按原判据与 seed **新建实验**重做，并把 `logs/`、`metrics.json` 复制过去，在 PR 里说明重建原因 |
-| `❗ 可判定判据全部满足却标记为 refuted …（若因其他观察否定假设，应改判 inconclusive）` | 结论与判据不一致 | 按判据写状态：全部满足应判 `completed`；确因其他观察否定假设则判 `inconclusive` |
+| `错误：拒绝写入状态 completed（状态未变更）：判据被违反却标记为 completed …` | 结论与判据不一致 | 按判据改判：有违反 → `refuted`；无法裁决 → `inconclusive`；判据确实错了只能新建实验（判据冻结）。**状态没有被写下去**，所以没有留下不可回退的非法终态 |
+| `错误：拒绝写入状态 refuted（状态未变更）：可判定判据全部满足却标记为 refuted …` | 结论与判据不一致 | 全部满足应写 `completed`；确因其他观察否定假设则写 `inconclusive` |
 | `⚠️ git 时序不可判定：metrics.json 未提交` | 结果尚未提交（或非 git/浅克隆） | 本地不阻断；提交后复查；CI 需 `fetch-depth: 0` |
 | `预注册违规` 出现在"预注册与结果同一个提交" | squash 合并把两次提交压成一次 | 拆成两次提交；实验类 PR 用 merge/rebase |
-| `终态缺少非空原始日志（logs/ 为空）` / `终态缺少 seed` | 只留了摘要，或没登记 seed | 重跑 `run.sh` 保留原始 stdout；seed 在 `new --seed` 时登记 |
+| `错误：拒绝写入状态 …：终态缺少非空原始日志（logs/ 为空）` | 终态必须有原始 stdout | 先 `bash experiments/<id>/run.sh` 产出日志再推进（证据文件不受冻结限制，可补） |
+| `错误：拒绝写入状态 …：终态缺少 seed` | `new` 时没有 `--seed`，而 seed 属于冻结的预注册记录 | 无法补登：新建实验并按原判据登记 seed，或重新预注册 |
+| `错误：拒绝写入状态 …：终态缺少 metrics.json` | `--metrics` 指向了规范路径之外的副本 | 让 `run.sh` 把指标写到 `experiments/<id>/metrics.json`（`verify` 只读该路径） |
+| `错误：拒绝写入状态 …：预注册漂移 …` | 判据/镜像/manifest 被改过 | 先撤销改动（`git checkout -- experiments/<id>`）再推进；预注册字段不可事后修改 |
+| `终态缺少非空原始日志（logs/ 为空）` / `终态缺少 seed`（来自 `verify`） | 绕过 CLI（旧版 / 手工编辑）写下的终态 | 补日志后复查；seed 缺失或判据冲突只能重建实验 |
 | `run.sh 不可执行（chmod +x run.sh）` | 权限位丢了 | `chmod +x experiments/<id>/run.sh` |
 | `缺少可重跑入口 run.sh` | 文件被删/改名 | 从其他实验复制骨架并改 `RUN=` |
 | `错误：指标文件不存在：experiments/.../metrics.json` | `--metrics` 相对 **cwd** 解析，不是相对 `--root` | 用绝对路径，或在仓库根执行命令 |
 | `非法状态转移 preregistered -> completed` | 跳步 | 先 `running`，再定终态 |
-| `非法状态转移 completed -> refuted；从 completed 只能转到：（终态，不可变更）` | 终态回退 | 不可回退：新建实验重做（见步骤 6 的警示） |
+| `非法状态转移 completed -> refuted；从 completed 只能转到：（终态，不可变更）` | 终态回退 | 终态不可回退。`status` 的写入前闸门已挡住"会被判失败的终态"，因此这种状态只可能来自绕过 CLI 的写入（旧版 / 手工编辑）→ 新建实验重做 |
 | `⚠ 负知识命中：同一判据曾在 exp-0001（refuted）被证伪` | 重提已被证伪的判据 | 允许，但必须在假设里说明**新证据**（新数据/新设计/原实验缺陷）；`experiment.json` 会记 `prior_refutations` |
 | `未发现实验：请先 scirearch new，或在 CI 中使用 --allow-empty` | 仓库还没有实验 | 本地先建实验；CI 已带 `--allow-empty` |
 | `data/raw 只读：拒绝对 … 的写入` | 护栏命中（正常行为） | 派生物写 `data/interim/` 或 `experiments/<id>/` |

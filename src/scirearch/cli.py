@@ -16,12 +16,21 @@ from scirearch.experiment import (
     STATUS_INCONCLUSIVE,
     STATUS_REFUTED,
     ExperimentError,
+    StatusRejected,
     create_experiment,
     load_manifest,
     resolve_experiment,
     set_status,
 )
-from scirearch.verify import check_experiment, exit_code, refuted_index, render_report, verify_tree
+from scirearch.verify import (
+    EXIT_CONTRACT,
+    EXIT_CRITERIA_CONFLICT,
+    check_experiment,
+    exit_code,
+    refuted_index,
+    render_report,
+    verify_tree,
+)
 
 __version__ = "0.1.0"
 
@@ -78,11 +87,16 @@ def build_parser() -> argparse.ArgumentParser:
     new.add_argument("--seed", type=int, default=None, help="随机种子")
     new.add_argument("--run-cmd", default=None, help="写入 run.sh 的默认命令")
 
-    status = sub.add_parser("status", help="推进实验状态")
+    status = sub.add_parser("status", help="推进实验状态（会被 verify 判失败的推进直接拒绝）")
     _add_root(status)
     status.add_argument("experiment", help="实验目录或 exp-NNNN 前缀")
     status.add_argument("status", choices=sorted(ALL_STATUSES), help="目标状态")
-    status.add_argument("--metrics", type=Path, default=None, help="终态必需的指标文件")
+    status.add_argument(
+        "--metrics",
+        type=Path,
+        default=None,
+        help="终态必需的指标文件；必须是 experiments/<id>/metrics.json（verify 只读该路径）",
+    )
     status.add_argument("--reason", default=None, help="变更原因（写入 history）")
 
     verify = sub.add_parser("verify", help="校验实验合同")
@@ -141,14 +155,10 @@ def _cmd_status(args: argparse.Namespace, root: Path) -> int:
         metrics_path=args.metrics,
     )
     print(f"{manifest['id']}：{manifest['status']}（已写入 history）")
-    result = check_experiment(exp_dir)
-    if result.inconsistencies or result.problems:
-        print("合同未通过：", file=sys.stderr)
-        for message in (*result.inconsistencies, *result.problems):
-            print(f"  - {message}", file=sys.stderr)
-        print("完整报告：scirearch verify", file=sys.stderr)
-    else:
-        print("提示：运行 `scirearch verify` 确认证据完整。")
+    # 状态已按合同写入；此处只回显不阻断的不可判定项（git 时序等）。
+    for warning in check_experiment(exp_dir).warnings:
+        print(f"⚠ {warning}", file=sys.stderr)
+    print("提示：运行 `scirearch verify` 确认证据完整。")
     return 0
 
 
@@ -214,6 +224,9 @@ def main(argv: list[str] | None = None) -> int:
     }
     try:
         return handlers[args.command](args, root)
+    except StatusRejected as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return EXIT_CRITERIA_CONFLICT if exc.conflicts else EXIT_CONTRACT
     except ExperimentError as exc:
         print(f"错误：{exc}", file=sys.stderr)
         return 1

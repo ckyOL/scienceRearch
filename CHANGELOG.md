@@ -31,8 +31,14 @@
   会失败，只有在 `RUN=` 里显式引用 `${SEED}` 才能拿到 seed。现在两种写法都成立（模板注释里的
   "seed 导出" 与实现一致）。
 - `scirearch new` 的证伪路径不再是"事后填写"的提示，而是预注册的一部分（必填、冻结）。
-- `scirearch status` 在推进后立即回显合同问题；`scirearch report` 增列判据判定、负知识索引与
-  机器/人工标注（完整性控制 ≠ attestation）。
+- **`scirearch status` 改为写入前闸门**：推进前按目标状态模拟一次完整校验，任何会被 `scirearch verify`
+  判失败的推进**直接拒绝、状态不变**，退出码与 verify 同语义（1 合同非法 / 2 判据冲突）。
+  此前是"先写入、再回显问题"——终态不可回退，一次手滑就把实验永久钉在判据冲突或证据缺失上
+  （既过不了 `verify`，也无法再改判 `refuted`/`inconclusive`）。`verify` 的检出能力不变：
+  绕过 CLI 写下的状态（旧版 CLI / 手工编辑）照样判失败。
+- `scirearch status --metrics` 要求指标文件位于 `experiments/<id>/metrics.json`：`verify` 只读该规范路径，
+  把副本放在别处会被判"终态缺少 metrics.json"，现在在写入前就被拒绝。
+- `scirearch report` 增列判据判定、负知识索引与机器/人工标注（完整性控制 ≠ attestation）。
 - CI `experiment contract` job 改用 `fetch-depth: 0`；模板使用说明新增"把该 job 设为 required
   status check"这一步。
 - 实验协议、架构、omp 设施（RULES / WATCHDOG / experimenter / critic / replicator / skill）同步更新。

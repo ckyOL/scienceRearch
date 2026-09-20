@@ -25,6 +25,11 @@ exp-0001-fixed-seed-baseline/
 `preregistered → running → {completed | refuted | inconclusive}`，另有 `abandoned`。
 终态不可回退；每次变更写入 `history`（含时间、原因、指标路径）。
 
+**推进是闸门**：`scirearch status` 在写入前按目标状态模拟一次完整校验，任何会被 `scirearch verify`
+判失败的推进**直接拒绝、状态不变**（退出码 1 合同非法 / 2 判据冲突）。因为终态不可回退，
+"先写状态、再报问题"会把实验永久钉在一个既不合法、也无法改判的状态上。
+`--metrics` 必须指向 `experiments/<id>/metrics.json`——`verify` 只读这个规范路径。
+
 ## 判据
 
 - **可求值形式**：`指标 运算符 数值`（如 `std_accuracy < 0.01`、`results.std >= 1e-3`），

@@ -27,7 +27,7 @@ output:
 3. `data/raw/` 只读。中间产物写 `data/interim/`，产物写 `experiments/<id>/`。
 4. 只修改 `run.sh` 中标 `RUN=` 的那一行；seed 由环境变量注入，禁止硬编码随机性绕过 seed。
 5. 原始输出必须落 `logs/`（由 run.sh 的 tee 保证），不得只保留摘要；`metrics.json` 只能由脚本产出，禁止手工编辑。
-6. 推进状态用 CLI：`scirearch status <id> running` → 完成后 `scirearch status <id> completed --metrics ... --reason "..."`（结果为否定时用 `refuted`）。`completed` 要求可求值判据全部满足，`refuted` 要求至少一条违反，否则退出码 2。
+6. 推进状态用 CLI：`scirearch status <id> running` → 完成后 `scirearch status <id> completed --metrics experiments/<id>/metrics.json --reason "..."`（结果为否定时用 `refuted`）。`completed` 要求可求值判据全部满足，`refuted` 要求至少一条违反。**CLI 在写入前会模拟校验**：会被 `verify` 判失败的推进直接拒绝（退出码 1 合同非法 / 2 判据冲突）且状态不变——按报错补齐证据或改判，禁止绕过 CLI 直接编辑 `experiment.json`（终态不可回退，写错即报废）。
 7. 收尾必须跑 `scirearch verify`（0 通过 / 1 合同非法 / 2 判据冲突），未通过不得汇报 supported。
 8. 结果与预期不符时如实报告 `refuted`；禁止调参掩盖、禁止丢弃失败的 run、禁止事后放宽判据。
 9. 只跑被分配的实验；多个实验由调用方并行分派，不要在本 agent 内自己展开。

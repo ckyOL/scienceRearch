@@ -11,6 +11,7 @@ import pytest
 from scirearch.experiment import (
     SCHEMA_VERSION,
     ExperimentError,
+    StatusRejected,
     canonical_text_sha256,
     create_experiment,
     criteria_sha256,
@@ -134,6 +135,7 @@ def test_terminal_status_requires_parsable_metrics(tmp_path: Path) -> None:
         set_status(exp_dir, "completed", metrics_path=bad)
 
     metrics = _write_metrics(exp_dir)
+    _write_log(exp_dir)
     manifest = set_status(exp_dir, "completed", metrics_path=metrics, reason="判据满足")
 
     assert manifest["status"] == "completed"
@@ -146,6 +148,7 @@ def test_terminal_status_requires_parsable_metrics(tmp_path: Path) -> None:
 def test_status_machine_rejects_skips_and_terminal_changes(tmp_path: Path) -> None:
     exp_dir = _create(tmp_path)
     metrics = _write_metrics(exp_dir)
+    _write_log(exp_dir)
 
     with pytest.raises(ExperimentError, match="非法状态转移"):
         set_status(exp_dir, "completed", metrics_path=metrics)
@@ -163,6 +166,7 @@ def test_status_machine_rejects_skips_and_terminal_changes(tmp_path: Path) -> No
 def test_refuted_runs_keep_their_evidence(tmp_path: Path) -> None:
     exp_dir = _create(tmp_path)
     metrics = _write_metrics(exp_dir, {"std": 0.42})
+    _write_log(exp_dir)
 
     set_status(exp_dir, "running")
     manifest = set_status(exp_dir, "refuted", metrics_path=metrics, reason="方差超标")
@@ -175,9 +179,27 @@ def test_refuted_runs_keep_their_evidence(tmp_path: Path) -> None:
     ]
 
 
+def test_status_refuses_verdict_that_contradicts_criteria(tmp_path: Path) -> None:
+    exp_dir = _create(tmp_path)
+    metrics = _write_metrics(exp_dir, {"std": 0.42})
+    _write_log(exp_dir)
+    set_status(exp_dir, "running")
+
+    with pytest.raises(StatusRejected, match="判据被违反却标记为 completed") as excinfo:
+        set_status(exp_dir, "completed", metrics_path=metrics)
+
+    assert excinfo.value.status == "completed"
+    assert excinfo.value.conflicts and not excinfo.value.problems
+    # 拒绝即不落盘：status 与 history 都保持原样（终态不可回退，写了就无法修复）。
+    manifest = load_manifest(exp_dir)
+    assert manifest["status"] == "running"
+    assert [entry["status"] for entry in manifest["history"]] == ["preregistered", "running"]
+
+
 def test_reproposed_refuted_criteria_hit_negative_knowledge(tmp_path: Path) -> None:
     refuted = _create(tmp_path, slug="first", criteria=["std < 0.01"])
     metrics = _write_metrics(refuted, {"std": 0.42})
+    _write_log(refuted)
     set_status(refuted, "running")
     set_status(refuted, "refuted", metrics_path=metrics)
 
