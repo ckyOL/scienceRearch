@@ -1,0 +1,15 @@
+{
+  "modelRoles": {
+    "default": "<provider>/<model>:<effort>",
+    "smol": "<provider>/<model>",
+    "slow": "<provider>/<model>:<effort>",
+    "plan": "<provider>/<model>",
+    "task": "<provider>/<model>",
+    "commit": "<provider>/<model>",
+    "tiny": "<provider>/<model>",
+    "vision": "<provider>/<model>",
+    "worker": "<provider>/<model>",
+    "review": "<provider>/<model>:<effort>",
+    "advisor": "<provider>/<model>:<effort>"
+  }
+}

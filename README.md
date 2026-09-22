@@ -73,7 +73,7 @@ scirearch report
 │  ├─ hooks/pre/             #   tool_call 级护栏（拦截对 data/raw 的写与破坏性命令）
 │  ├─ AGENTS.md RULES.md     #   项目上下文 / 常驻硬规则
 │  ├─ WATCHDOG.md            #   advisor 复核清单
-│  └─ config.yml             #   模型角色、并发、隔离、advisor
+│  └─ config.yml             #   项目策略（并发、隔离、advisor）；模型角色表在本机 .omp/settings.json（不进库）
 ├─ src/scirearch/            # 合同工具：manifest / 状态机 / 校验 / 报告
 ├─ tests/                    # 针对合同的行为测试
 ├─ experiments/              # 每个假设一个目录（预注册 + 可重跑入口 + 证据）
@@ -140,7 +140,7 @@ gh repo create my-research --template ckyOL/scienceRearch --public --clone
 模板实例只复制文件、**不带上游 commit 历史**——正好让 git 时序防火墙从你自己的第一次提交开始记账
 （克隆上游历史也不会坏事，只是没必要）。
 
-建库后必做 4 件事：
+建库后必做 5 件事：
 
 1. 替换仓库地址占位符：README 徽章、`pyproject.toml`（`Homepage` / `Issues`）、`CITATION.cff`、
    `CHANGELOG.md` 链接、`.github/ISSUE_TEMPLATE/config.yml`，本仓库统一指向 `ckyOL/scienceRearch`。
@@ -152,7 +152,13 @@ gh repo create my-research --template ckyOL/scienceRearch --public --clone
    没被依赖的闸门只是日志行——见 [docs/experiment-protocol.md §6](docs/experiment-protocol.md)。
    分支保护**不会随模板复制**，必须在新仓库里重设。
 
-按需调整：`.omp/config.yml` 的 `modelRoles`（换成你能用的模型）、`analysis/known-truth/`（可直接跑）。
+5. **配好本机模型角色表**（模板里刻意不含具体模型 id）：
+   `cp .omp/settings.json.example .omp/settings.json`（后者已被 `.gitignore`），把 11 个角色填成本机已认证且在计划内的模型，
+   再跑 `make roles-check` 验证 —— 缺本机表、缺契约角色、计划外模型都会 fail loud。
+   `.omp/settings.json.example` 是角色契约：模板将来新增角色时，闸门会提示你本地表已分叉。
+   细节见 [docs/getting-started.md §2.2](docs/getting-started.md)。
+
+按需调整：`analysis/known-truth/`（可直接跑）。
 
 举报渠道走 GitHub 原生机制，无邮箱：安全与行为准则报告见 [SECURITY.md](SECURITY.md) 与 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)（私有漏洞报告 + GitHub Report abuse）。
 

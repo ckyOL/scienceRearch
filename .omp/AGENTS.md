@@ -19,6 +19,7 @@
 
 ```bash
 make check                                    # 提交前闸门：格式 + lint + 测试 + 合同校验
+make roles-check                              # 角色别名闸门：本机已认证 + 订阅计划内 + 无悬空引用
 scirearch new <slug> -H "假设" -m "指标" -c "std_accuracy < 0.01" -f "证伪路径" --seed N
 scirearch status <exp-id> running|completed|refuted|inconclusive --metrics <path> --reason "..."
 scirearch verify [--json]                     # 退出码：0 通过 / 1 合同非法 / 2 判据与状态冲突

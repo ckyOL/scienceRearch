@@ -29,6 +29,8 @@ data/processed/
 # experiments/*/logs/*.log
 
 # --- omp 本地状态 ---
+# 本机真实配置（模型角色表等）不进模板库：模板只带 .omp/config.yml 的项目策略。
+.omp/settings.json
 .omp/local/
 *.jsonl
 

@@ -246,16 +246,11 @@ repo/
 | `.omp/WATCHDOG.md` | 人 | advisor 复核清单（不进主上下文） |
 | `notes/` | 主 agent | 自由探索区，不构成证据 |
 
-**设置骨架（`.omp/config.yml`）**
+**设置骨架**：角色表含具体模型 id → 放**本机** `.omp/settings.json`（已被 `.gitignore`，不进模板库）；
+提交进库的 `.omp/config.yml` 只放项目策略（见 [getting-started §2.2](getting-started.md)）。
 
 ```yaml
-modelRoles:                 # 角色集中管理，agent 文件只写 @别名
-  default: anthropic/claude-sonnet-4-5:medium
-  smol: openai/gpt-5-mini
-  advisor: anthropic/claude-sonnet-4-5:high
-  review: anthropic/claude-sonnet-4-5:high
-  worker: openai/gpt-5.4:medium      # experimenter 等执行型 agent 的默认档
-
+# .omp/config.yml（提交进库）—— 角色别名集中管理，agent 文件只写 @别名
 task:
   maxConcurrency: 8         # 并发实验数：受 CPU/GPU/配额约束，不要吃满
   maxRecursionDepth: 2

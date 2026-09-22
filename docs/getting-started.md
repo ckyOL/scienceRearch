@@ -43,37 +43,71 @@ uv run scirearch verify --json   # 机读合同状态；当前无实验 → stde
 ### 2.1 用模板建自己的库（若适用）
 
 本仓库已开启 GitHub **Template repository**；`gh repo create my-research --template ckyOL/scienceRearch --clone`。
-模板**不带上游 commit 历史**，正好让 git 时序防火墙从你的第一次提交开始记账。建库后必做 4 件事
-（占位符、LICENSE/CITATION、项目级 kill 判据、分支保护）见 README 的
+模板**不带上游 commit 历史**，正好让 git 时序防火墙从你的第一次提交开始记账。建库后必做 5 件事
+（占位符、LICENSE/CITATION、项目级 kill 判据、分支保护、本机模型角色表）见 README 的
 「[用它作为模板](../README.md#用它作为模板)」；其中第 4 件（把 `experiment contract` 设为 required
 status check）不做，闸门就只是日志行。
 
-### 2.2 omp：模型角色与并发（`.omp/config.yml`）
+### 2.2 omp：模型角色与并发（模板 config + 本机角色表）
 
-项目配置在 `.omp/config.yml`：omp 以**当前工作目录**下的 `.omp/` 为项目根（`hooks/`、`agents/`、`config.yml`
-都是按 `<cwd>/.omp` 加载的，不向上查找祖先目录），所以**请在仓库根启动 omp**。
-（会向上查找的只有 skills 与 `RULES.md` / `AGENTS.md` 这类上下文文件。）见 `omp://config-usage.md`。
-**换模型只改这一处**：agent 文件只引用 `@角色` 别名。
+omp 以**当前工作目录**下的 `.omp/` 为项目根（`hooks/`、`agents/`、`config.yml` 都按 `<cwd>/.omp` 加载，
+不向上查找祖先目录），所以**请在仓库根启动 omp**。会向上查找的只有 skills 与 `RULES.md` / `AGENTS.md`
+这类上下文文件。见 `omp://config-usage.md`。
 
-| 角色 | 谁在用 | 建议 |
+本仓库是**模板库**，所以配置分两层——**具体模型 id 是本机事实（provider 是否已认证、订阅计划是否包含），不入库**：
+
+| 文件 | 是否入库 | 放什么 |
 | --- | --- | --- |
-| `default` | 主会话、`hypothesizer`、`writer` | 能力均衡的模型 |
-| `smol` | `scout-lit`（只读侦察，量大且便宜） | 最快的模型 |
+| `.omp/config.yml` | **提交**（模板） | 项目行为：并发、隔离、`advisor`/`memory`/`checkpoint`、`agentModelOverrides`（agent→角色）。**不写任何具体模型 id** |
+| `.omp/settings.json.example` | **提交**（模板） | 角色**契约**：本仓库需要哪些角色（值全是占位符）。改动它等于扩大契约 |
+| `.omp/settings.json` | **ignore**（本机） | 由 example 复制而来，填入本机真实 `modelRoles`：每个角色指到你已认证且在计划内的模型 |
+
+这就是 `*.example` / `*.dist` 那套惯例（WordPress `wp-config-sample.php`、Symfony `parameters.yml.dist`、Laravel `.env.example`、PHPUnit `phpunit.xml.dist`）：**示例入库、真实文件本机、契约文件随上游演进**——
+Symfony 官方甚至会在两者分叉时提示你补新参数，`make roles-check` 对角色表做同样的事：
+
+```bash
+cp .omp/settings.json.example .omp/settings.json   # 首次；本机表所在文件已被 .gitignore
+```
+
+优先级由 omp 决定：项目 `.omp/settings.json` > 用户 `~/.omp/agent/config.yml` > 内建默认；
+但项目 `.omp/config.yml` **高于** `.omp/settings.json` —— 所以别在两处定义同名角色。
+`.omp/config.yml` 里的 `modelRoleStorage: global` 是为了防止 `/model` 的角色写入落进模板文件。
+agent 文件只引用 `@角色` 别名，换模型不动 agent 定义。
+
+| 角色 | 谁在用 | 选型要求 |
+| --- | --- | --- |
+| `default` | 主会话、`hypothesizer`、`writer` | 能力均衡；**本仓库里 `omp` 的初始模型就是它** |
+| `smol` | `scout-lit`（只读侦察，量大且便宜）；prewalk 交接目标 | 最便宜的可用模型 |
 | `worker` | `experimenter`、`replicator`（跑实验、复现） | 执行力强、便宜，长跑不心疼 |
-| `review` | `critic`（对抗性复核） | 与 `worker` **不同厂商/不同模型**，否则独立性打折 |
-| `advisor` | `advisor: true` 的 agent（experimenter/critic/replicator/hypothesizer） | 在线旁路复核，建议用 `review` 同级模型 |
+| `review` | `critic`（对抗性复核） | 与 `worker` **不同模型族**，否则独立性打折 |
+| `advisor` | `advisor: true` 的 agent（experimenter/critic/replicator/hypothesizer） | 在线旁路复核，必须与 `review` **也不同族**——同族只是同一个模型给两次意见 |
+| `tiny` `task` `plan` `commit` `slow` `vision` | harness 自己：标题/记忆、bundled `task` agent 与 eval `agent()` 默认、计划模式、提交信息、`--slow`、收图 | 没覆盖就**继承用户层配置**（通常是编程向模型）→ 要么覆盖，要么知道它此刻是什么 |
+
+第一次拿到模板：
+
+```bash
+cp .omp/settings.json.example .omp/settings.json   # 真实表在本机，已被 .gitignore
+$EDITOR .omp/settings.json                          # 每个角色填本机已认证且在计划内的模型
+make roles-check                                    # 缺表 / 缺角色 / 计划外，都会 fail loud
+```
+
+example 里的 11 个角色就是**契约**（缺哪个都算分叉，闸门会报 `契约角色 X 未在 .omp/settings.json 里定义`）：
+`.omp/agents/` 直接引用 `default`/`smol`/`worker`/`review`/`advisor`，其余六个 `tiny` `task` `plan` `commit` `slow` `vision`
+是 harness 自用（标题/记忆、eval `agent()` 默认、计划模式、提交信息、深推档、收图），**不覆盖就继承用户层，通常就是编程向模型**。
+提交进库的 `.omp/config.yml` 则只有策略部分：
 
 ```yaml
-modelRoles:
-  default: <provider>/<model>:<effort>
-  smol: <provider>/<model>
-  worker: <provider>/<model>:medium
-  review: <provider>/<model>:high      # 复核必须与生成者不同模型
-  advisor: <provider>/<model>:high
+modelRoleStorage: global              # /model 改角色写到用户层，别写进模板
 task:
-  maxConcurrency: 8                    # 并发实验数：按 CPU/GPU/额度收敛，不要吃满
+  maxConcurrency: 8                   # 并发实验数：按 CPU/GPU/额度收敛，不要吃满
   isolation:
-    enabled: true                      # 并行实验的硬前提：isolated spawn 走独立工作区
+    enabled: true                     # 并行实验的硬前提：isolated spawn 走独立工作区
+  agentModelOverrides:                # bundled agent 的 frontmatter 无 model → 默认继承父会话模型
+    task: "@task"                     # 这里按角色钉死，避免"隐式 agent 用了主会话模型"
+    scout: "@smol"
+    sonic: "@smol"
+    reviewer: "@review"
+    security-reviewer: "@review"
 advisor:
   enabled: true
 memory:
@@ -82,8 +116,19 @@ checkpoint:
   enabled: true
 ```
 
-改完怎么确认生效：`omp models | grep -i <你写的模型名>` 确认模型标识可解析；然后派一个最小任务
-（例如 `scout-lit` 做一次只读侦察）。角色别名解析失败会在 spawn 时直接报模型不可用，不会静默降级。
+改完怎么确认生效：`make roles-check` —— 逐角色**真发一次最小请求**，并检查
+① `.omp/config.yml` 没写 `modelRoles`（模板卫生）② `.omp/settings.json` 存在、没被提交、已被 ignore
+③ example 的契约角色全部由本机表提供（缺失**不算通过**：那种"全绿"只是用户层模型在过关）
+④ `@别名` 无悬空 ⑤ 每个角色「provider 已认证 + 模型在订阅计划内」，输出还会标出角色值来自 `local` 还是上层。
+两层**静默**失败必须先知道（均为实测）：
+
+1. `omp models` 列出的模型 ≠ 你有权调用。计划外模型只在真发请求时返回 `403 MODEL_NOT_IN_PLAN`
+   （实测某账号 commandcode 计划里 `claude-*`、`gpt-5.4*` 即如此）→ 别肉眼看列表，跑闸门。
+2. 子agent 分派时角色值不可用**不报错**：该条目被跳过，最终回退到**父会话模型**，分层静默失效
+   （实测：`scout-lit` 的 `@smol` 回退成了主会话模型，`critic`/`experimenter` 同理 → 生成与复核落到同一个模型上）。
+   只有 CLI 的 `omp -p --model '@角色'` 会硬报错（`No API key found for <provider>`）。
+
+`default` 不可用时，主会话会回退到**本机保存的默认模型**（可能同样在计划外 → 一启动就 403），所以 `default` 必须指向计划内模型。
 并发上限、隔离开关的具体字段语义见 `omp://config-usage.md`。
 
 ### 2.3 护栏与安全边界（必读）
@@ -338,7 +383,13 @@ uv run scirearch verify <实验目录>    # 单个实验
 | `未发现实验：请先 scirearch new，或在 CI 中使用 --allow-empty` | 仓库还没有实验 | 本地先建实验；CI 已带 `--allow-empty` |
 | `data/raw 只读：拒绝对 … 的写入` | 护栏命中（正常行为） | 派生物写 `data/interim/` 或 `experiments/<id>/` |
 | `verify` 说 `history 与 status 不一致` | 有人手工改了 `status` | 用 `scirearch status` 推进；必要时重建实验目录 |
-| 子agent spawn 报模型不可用 | `.omp/config.yml` 的角色别名指向了不可用模型 | 改 `modelRoles` 或换成你有权限的模型（§2.2） |
+| 子agent 实际跑的模型与 `modelRoles` 不符（例：`critic` 跑成了主会话模型） | 角色值不可用（provider 未认证 / 不在计划内）→ 分派时**静默回退到父会话模型** | `make roles-check` 定位；换成本机已认证且在计划内的模型（§2.2） |
+| 在仓库里直接 `omp` 启动就 `403 MODEL_NOT_IN_PLAN` | `modelRoles.default` 指向计划外模型，或不可用后回退到本机保存的默认模型 | 把 `default` 指向计划内模型，或启动时 `--model` 显式指定；`make roles-check`（§2.2） |
+| `omp -p --model '@角色'` 报 `No API key found for <provider>` | 该角色的 provider 没认证（CLI 硬报错；子agent 分派则静默回退，不报这一条） | `omp login` 或换成已认证 provider 的模型；跑 `make roles-check` |
+| `roles-check` 报 `config.yml 里出现了 modelRoles` | 模板文件被写了具体模型：会盖掉本机 `.omp/settings.json`，且随模板库分发 | 把这段 `modelRoles` 移到 `.omp/settings.json`（§2.2）；`config.yml` 只留项目策略 |
+| `roles-check` 报 `settings.json 未被 git 忽略` / `已被 git 跟踪` | 本机模型表有进库风险 | 恢复 `.gitignore` 的 `.omp/settings.json` 行；已提交过则 `git rm --cached .omp/settings.json` |
+| `roles-check` 报 `缺少本机角色表 .omp/settings.json` | 新克隆还没建本机表（此时"全绿"只会是用户层模型在过关，所以闸门直接停） | `cp .omp/settings.json.example .omp/settings.json` 后填写，再重跑 |
+| `roles-check` 报 `契约角色 X 未在 .omp/settings.json 里定义` | 模板新增了角色（契约文件变了），本地表没跟上 → 该角色会静默继承用户层 | 把缺的角色补进 `.omp/settings.json`（值取本机可用模型） |
 
 排查顺序建议：`scirearch verify --json <实验目录>` 看 `problems`（合同）与 `inconsistencies`（判据），
 再逐条对照本表；`report` 看全局与负知识索引。
@@ -363,11 +414,12 @@ uv run scirearch verify
 uv run scirearch report
 
 # Makefile
-make help | make fmt | make lint | make test | make verify | make report | make check
+make help | make fmt | make lint | make test | make verify | make report | make roles-check | make check
 
 # omp 侧
-omp models            # 确认模型可用，用于填 .omp/config.yml 的 modelRoles
+omp models            # 列出本机可用模型（注意：可用 ≠ 计划内；计划外模型只在真发请求时 403）
 omp config list       # 查看/核对设置
+make roles-check      # 角色表闸门：逐角色真发一次最小请求，验证「已认证 + 计划内 + 别名不悬空」
 ```
 
 ---

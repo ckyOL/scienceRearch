@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 UV ?= uv
 
-.PHONY: help venv install fmt lint test verify report check new clean
+.PHONY: help venv install fmt lint test verify report check roles-check new clean
 
 help: ## 显示所有命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -29,6 +29,9 @@ verify: ## 校验实验合同（仓库尚无实验时放行，与 CI 一致）
 
 report: ## 输出实验汇总表
 	$(UV) run scirearch report
+
+roles-check: ## 校验 .omp/config.yml 角色别名：provider 已认证 + 模型在订阅计划内 + 无悬空引用
+	bash scripts/roles-check.sh
 
 check: lint test verify ## 提交前完整闸门
 

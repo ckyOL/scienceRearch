@@ -1,12 +1,36 @@
-# Oh My Pi 项目配置（`omp` 读取）
-# 角色别名集中在此处；agent 文件只引用 @别名，换模型不必改 agent 定义。
+# Oh My Pi 项目配置（`omp` 读取）—— **模板文件：提交进库，不放本机事实**。
+#
+# 分层约定（模板库必须遵守）：
+#   - 这里只放「项目行为」：并发、隔离、advisor/memory/checkpoint、agent→角色映射。
+#   - **不写具体模型 id**。模型选择是本机事实（provider 是否已认证 + 订阅计划是否包含它），
+#     写进模板库会污染使用者，也会在换账号/换计划后静默失效。
+#   - 本机真实角色表放 `.omp/settings.json`（omp 的项目设置层，已 .gitignore）；
+#     角色**契约**放 `.omp/settings.json.example`（提交进库，值全是占位符）——
+#     本机表从它复制而来：cp .omp/settings.json.example .omp/settings.json
+#     缺本机表、或本机表没覆盖契约角色时，`make roles-check` 直接失败（不会拿用户层模型充数）。
+#     优先级：项目 `.omp/settings.json` > 用户 `~/.omp/agent/config.yml` > 内置默认。
+#     所以别在两处定义同名角色，也别在本文件写 `modelRoles`（会盖掉本地文件）。
+#   - 改完角色表跑 `make roles-check`：逐角色真发一次最小请求，验证
+#     「provider 已认证 + 模型在订阅计划内 + @别名无悬空」。
+#
+# agent 文件只引用 `@角色`；角色若在本机任何一层都没定义，分派**不报错**，
+# 而是静默回退到父会话模型 —— 生成与复核会落到同一个模型上（独立性失效）。
+#
+# 本机角色表放在 `.omp/settings.json`，形如：
+#   {
+#     "modelRoles": {
+#       "default": "<provider>/<model>:<effort>",   // 主会话 + @default + 回退链
+#       "smol":    "<provider>/<model>",            // 侦察 / prewalk 目标 / 轻量回退
+#       "worker":  "<provider>/<model>",            // experimenter / replicator：生成
+#       "review":  "<provider>/<model>:high",       // critic：复核（≠ 生成）
+#       "advisor": "<provider>/<model>:high",       // 旁路复核（≠ 生成 ≠ 复核）
+#       ...                                          // 建议连 tiny/task/plan/commit/slow/vision 一起钉死
+#     }
+#   }
+#   模板使用者至少要定义 worker / review / smol / default / advisor —— `.omp/agents/` 直接引用它们。
 
-modelRoles:
-  default: anthropic/claude-sonnet-4-5:medium
-  smol: openai/gpt-5-mini
-  worker: openai/gpt-5.4:medium # experimenter / replicator
-  review: anthropic/claude-sonnet-4-5:high # critic / 复核类
-  advisor: anthropic/claude-sonnet-4-5:high # 旁路在线复核
+# `/model` 里改角色时写入用户层；设成 project 会把本机模型写进这个模板文件。
+modelRoleStorage: global
 
 task:
   maxConcurrency: 8 # 并发实验数：按 CPU/GPU/配额收敛，不要吃满
@@ -16,6 +40,14 @@ task:
   softRequestBudget: 200
   # 需要临时封禁某角色时列出名字，例如 [replicator]
   disabledAgents: []
+  # bundled agent（task/scout/sonic/reviewer/security-reviewer）的 frontmatter 没有 model 字段
+  # → 默认继承父会话模型。这里按角色钉死，避免"隐式 agent 用了主会话模型"。
+  agentModelOverrides:
+    task: "@task"
+    scout: "@smol"
+    sonic: "@smol"
+    reviewer: "@review"
+    security-reviewer: "@review"
 
 advisor:
   enabled: true

@@ -7,6 +7,17 @@
 
 ### 新增
 
+- **角色可用性闸门 `make roles-check`**（`scripts/roles-check.sh`）：逐角色真发一次最小请求，验证
+  「provider 已认证 + 模型在订阅计划内 + `@别名` 无悬空」，并强制模板卫生——提交进库的 `.omp/config.yml`
+  不得含 `modelRoles`、本机角色表 `.omp/settings.json` 必须存在且已被 `.gitignore`、角色契约
+  `.omp/settings.json.example` 里的角色必须由本机表覆盖。动机是两层**静默**失败：`omp models` 列出的
+  模型不等于有权调用（计划外模型只在真发请求时返回 `403 MODEL_NOT_IN_PLAN`），而子agent 分派遇到不可用
+  角色不报错、直接回退到父会话模型（`review` 与 `worker` 会落到同一个模型上，复核独立性失效且无告警）。
+- **模型角色分层约定**：模板只提交项目策略 `.omp/config.yml` 与角色契约 `.omp/settings.json.example`；
+  具体模型 id 属本机事实，放被 `.gitignore` 的 `.omp/settings.json`
+  （`cp .omp/settings.json.example .omp/settings.json` 后填写），与 `*.example` / `*.dist` 惯例一致
+  （WordPress `wp-config-sample.php`、Symfony `parameters.yml.dist`、Laravel `.env.example`、PHPUnit `phpunit.xml.dist`）。
+
 - **使用指南**（[docs/getting-started.md](docs/getting-started.md)）：首次配置（前置条件、`modelRoles`
   角色映射、护栏加载位置、required check）、端到端第一次实验走查（含预检与终态选择）、与子agent 协作的
   硬约束、**实测报错 → 处理**的故障排查表、命令速查与不变量清单。
@@ -27,6 +38,14 @@
 
 ### 变更
 
+- `.omp/config.yml` 不再包含任何具体模型 id：只留项目策略（并发、隔离、advisor、memory、checkpoint、
+  `agentModelOverrides`）与 `modelRoleStorage: global`（防止 `/model` 的角色写入落进模板文件）。
+  模型表移到本机 `.omp/settings.json`，模板新增契约文件 `.omp/settings.json.example`，
+  `.gitignore` 忽略 `.omp/settings.json`。
+- **更正一处错误描述**：`docs/getting-started.md` §2.2 此前称"角色别名解析失败会在 spawn 时报模型不可用、
+  不会静默降级"——实测相反（静默回退到父会话模型；只有 CLI `omp -p --model '@角色'` 会硬报错）。
+  §2.2 同时重写为「模板 config + 本机角色表 + 契约」三层说明，故障排查表补充角色/闸门相关条目，
+  README 的模板必做清单增至 5 项（新增"配好本机模型角色表并跑闸门"）。
 - `run.sh` 模板改为 `export SEED`：此前 `SEED` 只作为 shell 变量赋值，脚本读 `os.environ["SEED"]`
   会失败，只有在 `RUN=` 里显式引用 `${SEED}` 才能拿到 seed。现在两种写法都成立（模板注释里的
   "seed 导出" 与实现一致）。
