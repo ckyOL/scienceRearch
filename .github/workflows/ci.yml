@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: astral-sh/setup-uv@v10.2.0
       - name: ruff format --check
         run: uvx ruff@0.16.8 format --check .
       - name: ruff check
@@ -50,7 +50,7 @@ jobs:
         with:
           # git 时序防火墙需要完整历史：浅克隆只能得到"不可判定"警告。
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: astral-sh/setup-uv@v10.2.0
       # 仓库可以没有实验（--allow-empty）；一旦有实验，合同必须全绿。
       # 闸门必须被依赖：把本 job（"experiment contract"）设为 main 的 required status check，
       # 否则门跑红也能照样合并——那它只是日志行（见 docs/experiment-protocol.md §2.5）。
