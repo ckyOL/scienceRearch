@@ -29,6 +29,9 @@ scirearch report [--json]                     # 判据判定 + 负知识索引
 ## 与 agent 协作的约定
 
 - 实验执行派 `experimenter`，**调用时带 `isolated: true`**；复核派 `critic` / `replicator`，必须与生成者不同 agent、不同模型、不同上下文。
+- **跑不了的假说走思想实验通道**：`scirearch new --kind thought-experiment -b "<阻碍条件>"`，
+  由 `reasoning.md` + 独立复核 `review.json` 收口（`rejected` / `promoted`）。它不构成经验证据，
+  不得作为论文结论引用；条件具备时用 `promoted --superseded-by exp-NNNN` 转成正式实验。
 - 子agent 不继承对话历史：共享背景写进 `task` 的 `context`，或写到 `local://` 文件后引用。
 - 实验类产出用 `yield` 提交，字段见 `.omp/skills/experiment-protocol/SKILL.md` 与 `docs/experiment-protocol.md`。
 - 预注册（判据 / `hypothesis.md` / 证伪路径 / seed）创建即冻结（sha256）；**先提交预注册，再跑实验**

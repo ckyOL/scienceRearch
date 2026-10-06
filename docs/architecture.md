@@ -6,7 +6,7 @@
 
 | 层 | 位置 | 职责 | 变更频率 |
 | --- | --- | --- | --- |
-| 合同层 | `src/scirearch/` | manifest schema、状态机、校验规则、汇总报告 | 低（改动=收紧规则，需测试） |
+| 合同层 | `src/scirearch/` | manifest schema（实验 / 思想实验两类记录）、状态机、校验规则、汇总报告 | 低（改动=收紧规则，需测试） |
 | 执行层 | `.omp/agents/`、`.omp/skills/` | 谁来做：侦察/假设/实验/复现/批判/写作 | 中 |
 | 护栏层 | `.omp/hooks/pre/`、`.omp/RULES.md` | 不可协商的硬约束（数据只读、命令拦截） | 低 |
 | 证据层 | `experiments/`、`data/` | 预注册文档、可重跑入口、日志、指标 | 高（每次实验） |
@@ -22,11 +22,15 @@ flowchart TB
   M --> R["run.sh<br/>（seed + 唯一 RUN 行）"]
   R --> L["logs/*.log<br/>（非空原始输出）"]
   R --> K["metrics.json<br/>（机器可判定的指标）"]
+  M --> RT["reasoning.md<br/>（思想实验：论证 / 反例搜索）"]
+  RT --> RV["review.json<br/>（独立复核逐条裁定判据）"]
   L --> V{"scirearch verify"}
   K --> V
+  RV --> V
   M --> V
   G["git 历史<br/>（预注册提交严格早于结果）"] --> V
   V -->|"合同 + 判据三态 + 时序"| P["report → analysis/ → paper/"]
+  V -->|"思想实验"| Q["只进开放问题与负知识索引<br/>不得作为结论引用"]
   V -->|"问题(1) / 判据冲突(2)"| B["打回：补齐、改判或撤销"]
 ```
 
@@ -40,7 +44,8 @@ flowchart TB
 | --- | --- | --- | --- |
 | `data/raw/` | 人工导入脚本 | agent 写入（hook 拦截） | 永久只读 |
 | `data/{interim,processed}/` | 实验脚本 | 手工修补 | 可重建，不入库 |
-| `experiments/<id>/` | `experimenter` / `replicator` | 手改 `metrics.json`；编辑 `hypothesis.md` 或判据（哈希冻结） | 永久（证据） |
+| `experiments/<id>/`（实验） | `experimenter` / `replicator` | 手改 `metrics.json`；编辑 `hypothesis.md` 或判据（哈希冻结） | 永久（证据） |
+| `experiments/<id>/`（思想实验） | `hypothesizer`（论证）/ 复核者（裁定）/ 调用方（落 `review.json`） | 放 `metrics.json`；在终态后编辑 `reasoning.md`；代改复核裁定 | 永久（非证据：只能进开放问题与负知识索引） |
 | `analysis/` | `writer` / 人 | 手写数字（必须由脚本产出） | 可重建 |
 | `paper/` | `writer` | 引用未验证产物 | 版本化 |
 | `notes/` | 任何 agent | —（死路归档须引用实验 id 或可寻址证据） | 可丢弃（但建议保留索引） |
@@ -67,8 +72,14 @@ flowchart TB
 2. **不用 `checkpoint` 做文件快照**：omp 的 `checkpoint`/`rewind` 只记录对话状态，不含工作区（`omp://tools/checkpoint.md` 明确说明）。文件级回滚用 git 与 `isolated` 分支。
 3. **日志入库**：`logs/` 是终态的必要证据，默认提交；超大日志走外部存储 + 在 manifest 登记 hash（见 `experiments/README.md`）。
 4. **合同用标准库实现**：`scirearch` 零运行时依赖，保证在任意 CI/子agent 环境可执行，不因依赖漂移而静默失效。
-5. **状态机而非自由字段**：`preregistered → running → {completed, refuted, inconclusive, abandoned}`。终态不可回退；每次变更留 `history`。配合预注册哈希与 git 时序，"事后改判据"在结构上不可能——改内容、重算哈希、改状态各有独立检查。状态推进前还会按目标状态模拟一次 `verify`：会被判失败的终态**不会被写入**（终态不可回退，先写后报等于把实验钉死）。
+5. **状态机而非自由字段**：实验 `preregistered → running → {completed, refuted, inconclusive, abandoned}`；
+   思想实验 `speculative → {rejected, promoted, abandoned}`。状态与类型绑定，跨类型一律拒绝。终态不可回退；每次变更留 `history`。配合预注册哈希与 git 时序，"事后改判据"在结构上不可能——改内容、重算哈希、改状态各有独立检查。状态推进前还会按目标状态模拟一次 `verify`：会被判失败的终态**不会被写入**（终态不可回退，先写后报等于把实验钉死）。
 6. **判据机械化，人工兜底显式化**：可求值判据（`指标 运算符 数值`）由 `verify` 三态求值，`report` 标 `[机器]`；自由文本判据标 `[人工]`。二者不合并——机器判定是完整性控制，不是 attestation（借鉴 ArmProof 的自我限定与 honest-signal 的数字二分）。
-7. **允许负结果与负知识**：`refuted`/`inconclusive` 与 `completed` 同等的证据要求；被证伪判据按 `criteria_sha256` 进入负知识索引，重提必须携带新证据（借鉴 dsh-research-report）。
+7. **允许负结果与负知识**：`refuted`/`inconclusive` 与 `completed` 同等的证据要求；被否定的判据（`refuted` 实验 / `rejected` 思想实验）按 `criteria_sha256` 进入负知识索引，重提必须携带新证据（借鉴 dsh-research-report）。
 8. **自检先于自夸**：`analysis/known-truth/` 用已知真值（含零效应）问题度量"预注册 + 独立复核"相对裸 agent 的收益；结论为负照样按终态归档（借鉴 nullius 的已知真值自证）。
 9. **项目级预测同样可证伪**：`docs/project-preregistration.md` 登记项目主张、kill 判据与到期判定命令，到期按判据执行，不做事后合理化（借鉴 honest-signal 的自注册 kill 判据）。
+10. **假想实验有合法通道，但永不冒充证据**：`kind=thought-experiment` 必须写明 `blockers`（什么条件缺失使它无法实验），
+    证据是 `reasoning.md` + 独立复核 `review.json`（逐条裁定全部判据、生成/复核分离、终态冻结论证哈希）；
+    机器层面禁止 `metrics.json`、禁止 `completed`/`refuted`，`report` 显式标注"不构成经验证据"，
+    `promoted` 必须指向真实存在的实验（悬空引用即失败）。`abandoned` 只需 `--reason`——此前连"放弃"都要
+    metrics + 日志 + seed，等于让跑不了的假说没有合法出口，只能挂成永远 open 的 `preregistered` 或走漏洞。

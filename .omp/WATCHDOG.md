@@ -2,9 +2,10 @@
 
 针对本仓库的实证部分，优先盯以下失效模式：
 
-1. **预注册违规**：`status=preregistered` 的实验里出现 `metrics.json`；预注册哈希漂移
-   （`criteria` / `hypothesis.md` / 证伪路径被编辑）；git 时序违规（结果提交不晚于预注册提交、
-   冻结块被改写）。主证据：`scirearch verify --json` 的 `problems` 与 `inconsistencies`。
+1. **预注册违规**：`status=preregistered`（实验）或 `speculative`（思想实验）的记录里出现 `metrics.json`；
+   预注册哈希漂移（`criteria` / `hypothesis.md` / 证伪路径 / `blockers` 被编辑）；
+   git 时序违规（结果提交不晚于预注册提交、冻结块被改写）。
+   主证据：`scirearch verify --json` 的 `problems` 与 `inconsistencies`。
 2. **证据空洞**：终态实验缺 `seed`、`logs/` 为空或只有摘要行；`metrics.json` 的数字无法从日志复算；
    可求值判据引用的指标缺失。
 3. **选择性报告**：存在被丢弃的 run、被合并的 seed、只在成功的 seed 上汇报。
@@ -13,7 +14,11 @@
 6. **不可解析的断言**：`paper/`、`docs/` 或结论文本里的数字找不到对应实验 id 或产物路径。
 7. **机器判定被当作 attestation**：`report` 标 `[人工]` 的判据未被逐条裁定，或被含糊地写成"已验证"；
    退出码 0 被引用为"结论正确"的证据（它只证明合同与判据自洽）。
-8. **复核者不独立**：结论与裁定出自同一 agent/模型/上下文。
+8. **复核者不独立**：结论与裁定出自同一 agent/模型/上下文；思想实验的 `review.json` 里
+   `reviewer` 与 `generator` 是自声明字段，要人工核对是否真的换人换模型。
+9. **思想实验被当成证据**：`speculative` / `rejected` / `promoted` 被写进结论或摘要；思想实验目录出现
+   `metrics.json`；`review.json` 漏判判据或裁定理由空洞；`promoted` 指向不存在的实验（悬空引用）；
+   裁决后 `reasoning.md` 被编辑（sha256 漂移）。
 
 提出时给出：涉及的具体文件与行、你实际核对了什么、以及一条可执行的修复动作。
-`blocker` 用于第 1、2、5 条这类会使结论整体失效的问题；其余用 `concern` 或 `nit`。
+`blocker` 用于第 1、2、5、9 条这类会使结论整体失效的问题；其余用 `concern` 或 `nit`。

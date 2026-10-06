@@ -36,8 +36,39 @@
 - **项目级预注册**：`docs/project-preregistration.md` 登记项目主张与自注册 kill 判据。
 - `scirearch verify` 退出码语义：0 通过 / 1 合同非法 / 2 判据与状态冲突（ArmProof 语义）。
 
+- **思想实验通道（manifest schema v3）**：`scirearch new --kind thought-experiment` 支持**原则上可证伪、
+  当前无法实验**的假说：`-b/--blockers` 必填（写清什么条件缺失使它无法实验），状态机为
+  `speculative → {rejected, promoted, abandoned}`，证据是 `reasoning.md`（终态冻结 sha256）+
+  `review.json`（独立复核逐条裁定**全部**判据，`rulings[].ruling ∈ {satisfied, violated, unclear}`）。
+  机器层面禁止 `metrics.json`、禁止 `completed`/`refuted`、禁止跨类型状态；
+  `promoted` 必须指向**真实存在的 `kind=experiment` 记录**（`--superseded-by exp-NNNN`，悬空引用即失败），
+  且只表示"已转入可执行实验"，不表示假设成立。动机：此前"跑不了"的假说没有合法落点——
+  连 `abandoned` 都要求 metrics + 日志 + seed，唯一"能收口"的方式是塞一个自由文本判据 + 手写
+  `metrics.json` 骗过 `completed`（实测可复现，属合同漏洞）。`report` 对思想实验显式标注
+  "不构成经验证据，不得作为 `paper/` 结论引用"。
+- `scirearch status --review <path>` / `--superseded-by <id>`：思想实验终态的收口参数；
+  `review.json` 的 `reviewer`/`generator`（agent 与 model 都必须不同）为自声明的生成/复核分离标记
+  （完整性控制，非 attestation）。
+- `scirearch report` 的负知识索引改为覆盖**被否定**的判据（`refuted` 实验 + `rejected` 思想实验），
+  条目含 `kind`/`status`；`new` 的负知识告警同时给出来源状态与类型。
+- `.omp/agents/critic` 新增 `review_rulings` 输出字段与思想实验复核职责（只读产出裁定，由调用方原样落盘）；
+  `hypothesizer` 的假设 schema 新增 `kind`/`blockers`（跑不了的方向必须给出阻碍条件）。
+- 测试：`tests/test_thought_experiment.py`（type 隔离、metrics 禁令、复核裁定完整性、生成/复核分离、
+  论证冻结、promotion 悬空引用、abandoned 免证据、负知识索引、git 时序、CLI 组合校验）。
+- **独立模型复核驱动的加固**（异模型审计 findings，逐条处置）：判据不得重复（空白折叠后互异）；
+  `superseded_by` 先做 id 格式校验（防路径穿越/通配符），并要求目标 manifest 的 `id` 与引用一致；
+  复核者/生成者身份比较先 strip + casefold（防 `"critic "` 之类的伪分离）；`metrics.json` / `review.json`
+  不可读（非 UTF-8、权限、I/O）改为结构化失败而不是抛异常；负知识索引只收录 `verify` 通过的记录
+  （手工写下的非法终态不构成已确立的否定）。
+
 ### 变更
 
+- **`abandoned` 不再要求 `--metrics` / 日志 / seed，改为要求 `--reason`**：放弃不产出结论，也不需要证据；
+  此前"决定不跑"的记录无法合法收口，只能永远挂在 `preregistered`。
+- 预注册记录哈希（`record_sha256`）覆盖面扩大：新增 `kind` 与 `blockers`——把实验改标为思想实验同样会被检出。
+- `scirearch report --json` 的正文字段 `experiments` → `records`、`refuted_index` → `negative_index`
+  （一条记录可能是实验或思想实验，旧名已不准确）；`verify`/`report` 的表格新增"类型"列，
+  `verify --json` 的结果对象新增 `kind`/`has_reasoning`/`has_review`。
 - `.omp/config.yml` 不再包含任何具体模型 id：只留项目策略（并发、隔离、advisor、memory、checkpoint、
   `agentModelOverrides`）与 `modelRoleStorage: global`（防止 `/model` 的角色写入落进模板文件）。
   模型表移到本机 `.omp/settings.json`，模板新增契约文件 `.omp/settings.json.example`，
@@ -71,6 +102,9 @@
   （本仓库尚无既有实验，无实际迁移成本）。旧实验如需保留，用 `scirearch new` 按原始判据与证伪路径
   重建目录并重新登记冻结哈希；已产出的证据（`logs/`、`metrics.json`）可手工复制入新目录，
   但需接受"冻结时间点为重建时"这一事实。
+- manifest schema v2 → v3：v2 记录缺少 `kind`，且预注册记录哈希不含 `kind`/`blockers`，会被 `verify` 拒绝
+  （本仓库尚无既有记录，无实际迁移成本）。迁移方式同 v1 → v2：用 `scirearch new` 按原始假设、判据、
+  证伪路径与 seed 重建；`experiments/` 目录下的既有证据文件可复制入新目录。
 
 ## [0.1.0] - 2026-09-17
 

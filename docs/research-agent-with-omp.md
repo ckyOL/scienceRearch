@@ -385,6 +385,13 @@ for h in hypotheses:  # K 条假设
 > #4 落为 CI 注释与实验协议 §6（required status check 设置）；#5 落为 `analysis/known-truth/` 问题库 + 评分器；
 > #6 落为 `docs/project-preregistration.md`；#7/#8/#10 落为负知识索引（`criteria_sha256`）、`report` 的判据与 `[机器]`/`[人工]` 标注、`notes/dead-ends/` 约定；#9 落为 `verify` 退出码 0/1/2。
 > 上表"本项目现状"列保留调研时（v0.1.0）的快照。
+>
+> **补充（Unreleased，2026-09-23）**：§1.1 里 science-superpowers 的"强制标注 confirmatory vs exploratory、
+> 探索模式产物不得当 confirmatory 证据"落为 manifest v3 的 `kind=thought-experiment` 通道——
+> `speculative → {rejected, promoted}`，证据是 `reasoning.md`（终态冻结 sha256）+ 独立复核
+> `review.json`（逐条裁定全部判据、生成/复核分离），机器层面禁止 `metrics.json` 与 `completed`/`refuted`，
+> `report` 显式标注"不构成经验证据"；被驳回的判据与被证伪的判据同入负知识索引。同时修正一处合同缺口：
+> `abandoned` 不再要求 metrics + 日志 + seed（此前"跑不了/决定不跑"的记录没有合法出口）。
 
 **已具备、不必重复建设**：零依赖合同层（纯标准库）、状态机终态不可回退、`refuted`/`inconclusive` 与 `completed` 同等留痕、`logs/` 非空与 `run.sh` 可执行检查、`data/raw` 在 `tool_call` 层拦截、生成/复核 agent 分离 + advisor/WATCHDOG、`isolated` 隔离执行。
 

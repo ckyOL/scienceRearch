@@ -15,6 +15,8 @@
 
 本仓库因此不做"自动写论文"，只做一件更硬的事：**让每条结论都能被机器校验**（判据预注册并冻结、
 seed 与日志强制留痕、状态机禁止跳步、git 时序证明判据先于结果、写作只允许引用已验证产物）。
+跑不了的假说也有合法落点（`kind=thought-experiment`：写清阻碍条件、冻结判据、由独立复核裁定），
+但它永远不被当作经验证据——要么被驳回并进入负知识索引，要么转成可执行实验。
 
 机制本身也接受检验：`analysis/known-truth/` 用已知真值（含零效应、混杂、多重比较、泄漏）问题
 度量"预注册 + 独立复核"相对裸 agent 的收益；`docs/project-preregistration.md` 事先写下
@@ -61,6 +63,21 @@ scirearch verify
 scirearch report
 ```
 
+**跑不了的假说**（原则上有意义、当前无法实验）走思想实验通道——它同样要预注册、同样留痕，但**永远不被
+当成经验证据**：
+
+```bash
+scirearch new mechanism --kind thought-experiment \
+  --hypothesis "机制 M 是主因" --metric "论证自洽性 / 与既有结论的一致性" \
+  --criteria "论证自洽" --criteria "不与既有结论冲突" \
+  --falsification "出现反例或与既有结论冲突即放弃" \
+  --blockers "缺少可控干预手段：只能观察，不能随机分配"
+# 提交预注册 → 写 reasoning.md → 派独立复核者逐条裁定并落 review.json
+scirearch status exp-0002 rejected --review experiments/exp-0002-mechanism/review.json --reason "前提自相矛盾"
+# 或条件具备后：先 new 一个正式实验，再
+scirearch status exp-0002 promoted --review experiments/exp-0002-mechanism/review.json --superseded-by exp-0003
+```
+
 `make help` 列出全部开发命令（`make check` = 格式 + lint + 测试 + 合同校验）。
 
 ## 目录结构
@@ -76,7 +93,7 @@ scirearch report
 │  └─ config.yml             #   项目策略（并发、隔离、advisor）；模型角色表在本机 .omp/settings.json（不进库）
 ├─ src/scirearch/            # 合同工具：manifest / 状态机 / 校验 / 报告
 ├─ tests/                    # 针对合同的行为测试
-├─ experiments/              # 每个假设一个目录（预注册 + 可重跑入口 + 证据）
+├─ experiments/              # 每条记录一个目录：kind=experiment（run.sh + metrics.json）或 thought-experiment（reasoning.md + review.json）
 ├─ data/                     # raw 只读，interim/processed 可重建
 ├─ analysis/                 # 从 experiments/ 重建的统计与图表；known-truth/ 为自检问题库
 ├─ paper/                    # 稿件（数字必须可解析到实验 id）
@@ -88,27 +105,33 @@ scirearch report
 
 ```mermaid
 flowchart LR
-  P["预注册（创建即冻结<br/>假设 + 判据 + 证伪路径 + seed）"] --> C["提交预注册<br/>git"] --> R["执行<br/>run.sh（固定 seed，日志留痕）"]
+  P["预注册（创建即冻结<br/>假设 + 判据 + 证伪路径 + seed/blockers）"] --> C["提交预注册<br/>git"]
+  C --> R["执行<br/>run.sh（固定 seed，日志留痕）"]
+  C --> T["思想实验<br/>reasoning.md → 独立复核 review.json"]
   R --> S["状态推进<br/>running → completed / refuted / inconclusive"]
+  T --> S2["状态推进<br/>speculative → rejected / promoted / abandoned"]
   S --> V{"scirearch verify<br/>合同 + 判据三态 + git 时序"}
-  V -->|"1 合同问题"| X["打回：补日志 / 补 seed / 撤销提前结果"]
-  V -->|"2 判据冲突"| Y["改判 refuted/inconclusive 或修正证据"]
-  V -->|"0 通过"| W["写作与复核<br/>writer 只引用已验产物"]
+  S2 --> V
+  V -->|"1 合同问题"| X["打回：补日志 / 补 seed / 补复核记录 / 撤销提前结果"]
+  V -->|"2 判据冲突"| Y["改判 refuted/inconclusive/rejected 或修正证据"]
+  V -->|"0 通过"| W["写作与复核<br/>writer 只引用已验实验；思想实验只能进开放问题"]
 ```
 
 合同（`scirearch verify` 强制，CI 同款；退出码 0 通过 / 1 合同非法 / 2 判据冲突）：
 
 | 规则 | 检查点 |
 | --- | --- |
-| 先判据后结果 | `status=preregistered` 时出现 `metrics.json` → 失败 |
-| 预注册冻结 | `criteria` / `hypothesis.md` / 预注册记录的 sha256 在创建时登记，任何事后修改 → 失败 |
-| git 时序防火墙 | 预注册提交必须严格早于结果提交，且冻结块未被编辑（CI 以 `fetch-depth: 0` 裁定） |
-| 判据与状态一致 | 可求值判据三态求值：`completed` 不得有违反，`refuted` 必须有违反，否则退出码 2 |
-| 无 seed 不结论 | 终态必须带 `seed`，且 `logs/` 有非空原始日志 |
-| 可重跑 | `run.sh` 存在且可执行 |
-| 状态不可跳步 | `preregistered → completed` 被拒绝；终态不可再变更 |
-| 留痕 | 每次状态变更写入 `experiment.json.history`（含 reason 与来源） |
-| 负知识 | 曾被证伪的判据（按 `criteria_sha256`）重提时命中历史结论并记录 `prior_refutations` |
+| 先判据后结果 | `status=preregistered`（实验）/ `speculative`（思想实验）时出现 `metrics.json` → 失败 |
+| 预注册冻结 | `criteria` / `hypothesis.md` / 预注册记录（含 kind 与 blockers）的 sha256 在创建时登记，任何事后修改 → 失败 |
+| 类型隔离 | 思想实验不得进入 `completed`/`refuted`；实验不得进入 `speculative`/`rejected`/`promoted` |
+| git 时序防火墙 | 预注册提交必须严格早于结果提交（`metrics.json` 或 `review.json`），且冻结块未被编辑（CI 以 `fetch-depth: 0` 裁定） |
+| 判据与状态一致 | 可求值判据三态求值：`completed` 不得有违反，`refuted` 必须有违反；`rejected` 必须有复核裁定为违反，否则退出码 2 |
+| 无 seed 不结论 | 实验终态必须带 `seed`，且 `logs/` 有非空原始日志 |
+| 可重跑 | 实验的 `run.sh` 存在且可执行（思想实验不得有 `metrics.json`） |
+| 独立复核 | 思想实验终态必须有非空 `reasoning.md`（冻结 sha256）+ `review.json`（逐条裁定全部判据；复核者与生成者不同 agent、不同模型） |
+| 状态不可跳步 | `preregistered → completed` 被拒绝；终态不可再变更；`abandoned` 只需 `--reason` |
+| 留痕 | 每次状态变更写入 `experiment.json.history`（含 reason 与证据路径） |
+| 负知识 | 被否定的判据（`refuted` / `rejected`，按 `criteria_sha256`）重提时命中历史结论并记录 `prior_refutations` |
 
 ## 与 Oh My Pi 协作
 

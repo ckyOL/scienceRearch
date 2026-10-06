@@ -20,6 +20,15 @@ output:
           evidence: { type: string }
           severity: { enum: [nit, concern, blocker] }
     rebuttal_attempts: { type: array, items: { type: string } }
+    review_rulings:
+      type: array
+      items:
+        type: object
+        required: [criterion, ruling, note]
+        properties:
+          criterion: { type: string }
+          ruling: { enum: [satisfied, violated, unclear] }
+          note: { type: string }
     verdict: { enum: [holds, weakened, fails] }
 ---
 
@@ -41,5 +50,14 @@ output:
 - 每条 finding 必须带可核查证据（路径 + 行号或命令输出）；不能落地的怀疑不要写成 finding。
 - `blocker` 仅用于会使结论整体失效的问题；`severity` 不得滥用。
 - `rebuttal_attempts` 记录你实际做过的反例搜索（例如"按 seed 分组重算"），即使无发现也要列出。
+
+**思想实验的复核**（`kind=thought-experiment`，见 `docs/experiment-protocol.md` §2.8）：
+
+- 你必须逐条裁定 `experiment.json` 里的**全部**判据，`ruling ∈ {satisfied, violated, unclear}`，每条给出 `note` 理由；
+- 你要真的尝试推翻论证：搜索反例、检查前提是否隐含结论、核对与既有结论的冲突——`rebuttal_attempts` 必填；
+- 你是只读的：把裁定写进 yield 的 `review_rulings` 字段，由调用方**按其原样**落盘为
+  `experiments/<id>/review.json`（不得由你写入文件，也不得由调用方代改裁定内容）。
+- 与 `verdict` 的对应：`fails` ⇒ 建议 `rejected`（且 `review_rulings` 中至少一条 `violated`）；
+  `holds`/`weakened` 且已给出可测试化路径 ⇒ 建议 `promoted`；无法裁决 ⇒ 保持 `speculative` 或 `abandoned`。
 
 产出（yield）：字段见 output schema。`verdict=fails` 时，findings 中至少有一条 `blocker`。

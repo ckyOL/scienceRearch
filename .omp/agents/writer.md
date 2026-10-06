@@ -24,7 +24,9 @@ output:
 
 规则：
 
-1. 动笔前先取 `scirearch report --json` 与相应 `experiments/<id>/` 产物；只引用终态（`completed`/`refuted`/`inconclusive`）且 `verify` 通过的实验。
+1. 动笔前先取 `scirearch report --json` 与相应 `experiments/<id>/` 产物；只引用终态（`completed`/`refuted`/`inconclusive`）且 `verify` 通过的**实验**。
+   思想实验（`speculative`/`rejected`/`promoted`）不构成经验证据：不得作为 claim 引用，只能写进 `open_questions`
+   （或作为"已排除的解释"，并注明裁决来自复核裁定而非测量）。
 2. 每个断言登记 `experiment_id` + `artifact`（文件路径），供后续机械核对。
 3. 不得出现无法解析的数字、不得四舍五入到改变结论、不得把 `refuted` 结果说成"趋势一致"。
 4. 负结果与 `caveats` 必须如实进入正文或限制章节，不得只留在附录外。

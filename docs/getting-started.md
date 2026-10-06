@@ -2,6 +2,7 @@
 
 面向**第一次拿到本仓库的人**（直接使用，或用 GitHub Template 建自己的库）。读完应当能：
 装好环境 → 配好 omp 角色与护栏 → 预注册一个实验 → 跑出可校验的证据 → 知道哪里会失败、失败时看什么。
+**跑不了的假说**走思想实验通道（步骤 9）：同样预注册与留痕，但裁决来自论证 + 独立复核，永远不被当成经验证据。
 
 边界：本文回答"怎么配、怎么用"；**契约细节**（校验规则、退出码语义、复核要求）见
 [experiment-protocol.md](experiment-protocol.md)；目录职责与设计取舍见 [architecture.md](architecture.md)。
@@ -147,10 +148,12 @@ checkpoint:
 | 对象 | 谁可以写 | 你（人）**不要**做 |
 | --- | --- | --- |
 | `data/raw/` | 仅人工导入脚本 | 写入/删除/移动/解包/重定向（hook 拦截；绕过即安全事件） |
-| `metrics.json` | 只能由 `run.sh` 产出 | 手工编辑（证据链断裂，数字不可信） |
+| `metrics.json` | 只能由 `run.sh` 产出 | 手工编辑（证据链断裂，数字不可信）；放进**思想实验**目录（经验证据只能走正式实验） |
 | `experiment.json` 的 `status` | 只能由 `scirearch status` 改（写入前会被闸门校验） | 直接编辑（`history` 与 `status` 不一致会被 `verify` 检出） |
-| `hypothesis.md` / 判据 / 证伪路径 / seed | 创建时一次性写入 | 创建后任何编辑（sha256 漂移，`verify` 退出码 1） |
-| `paper/`、`docs/`、汇报里的数字 | 必须能解析到 `experiments/<id>/` 的产物 | 手写数字 |
+| `hypothesis.md` / 判据 / 证伪路径 / seed / `blockers` | 创建时一次性写入 | 创建后任何编辑（sha256 漂移，`verify` 退出码 1） |
+| `reasoning.md`（思想实验） | 终态前自由编辑 | 裁决（`rejected`/`promoted`）后编辑（论证漂移，`verify` 退出码 1） |
+| `review.json`（思想实验） | 复核者裁定、调用方**原样**落盘 | 代改裁定内容、补写/篡改 `reviewer` 身份 |
+| `paper/`、`docs/`、汇报里的数字 | 必须能解析到 `experiments/<id>/` 的产物 | 手写数字；把思想实验当结论引用 |
 
 ---
 
@@ -249,9 +252,9 @@ uv run scirearch verify experiments/exp-0001-fixed-seed-baseline
 ```
 
 ```text
-| 实验 | 状态 | 判据（机器/人工） | seed | 证据 | 提交 | 合同 |
-| --- | --- | --- | --- | --- | --- | --- |
-| exp-0001 fixed-seed-baseline | running | 1 满足 · 1 人工 | 1729 | metrics+1log | — | 通过 |
+| 记录 | 类型 | 状态 | 判据（机器/人工） | seed | 证据 | 提交 | 合同 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| exp-0001 fixed-seed-baseline | 实验 | running | 1 满足 · 1 人工 | 1729 | metrics+1log | — | 通过 |
 
 ### 判据判定
 - exp-0001 `std_accuracy < 0.01` → 满足（std_accuracy=0.00253）[机器]
@@ -273,15 +276,16 @@ uv run scirearch status exp-0001 completed \
 | `completed` | 可求值判据**全部满足** | 出现违反即判"判据冲突"（退出码 2） |
 | `refuted` | **至少一条**可求值判据被违反 | 全部满足却报 `refuted` 同样冲突 |
 | `inconclusive` | 判据无法裁决、证据不足，或假设被别的观察否定 | 合法终态，证据要求与 `completed` 相同 |
-| `abandoned` | 主动放弃（未产出结论） | 同样要求 metrics + 日志 + seed |
+| `abandoned` | 主动放弃（未产出结论） | 只需 `--reason`（此前要求 metrics + 日志 + seed，等于让"跑不了"的假说没有合法出口） |
+| `rejected` / `promoted` | 思想实验的收口（见步骤 9） | 需要 `--review` + 非空 `reasoning.md`；`rejected` 还要求至少一条判据被裁定违反 |
 
 > **`status` 是闸门，不是记事本。** 写入前它会按目标状态模拟一次完整校验：**任何会被 `verify`
 > 判失败的推进直接拒绝，状态保持不变**——退出码 `1`（合同非法：缺日志/缺 seed/`--metrics` 不在规范路径…）
 > 或 `2`（判据冲突）。这是必须的：**终态不可回退**，若先写状态再报问题，实验会被永久钉在一个不合法的
 > 状态上，既过不了 `verify` 也无法改判，只能重建。
 >
-> `--metrics` 必须是 `experiments/<id>/metrics.json`：**`verify` 只读这个路径**（放在别处会被判"终态缺少
-> metrics.json"）。
+> `--metrics` 必须是 `experiments/<id>/metrics.json`、`--review` 必须是 `experiments/<id>/review.json`：
+> **`verify` 只读这两个规范路径**（放在别处会被判"终态缺少 …"）。
 
 ### 步骤 7 · 提交结果，让时序检查转绿
 
@@ -297,10 +301,53 @@ uv run scirearch verify
 
 ```bash
 uv run scirearch report          # markdown：判据判定 + 问题/警告 + 负知识索引
-uv run scirearch report --json   # 机读：criteria / inconsistencies / refuted_index
+uv run scirearch report --json   # 机读：records / criteria / inconsistencies / negative_index
 ```
 
 `report` 里标 `[人工]` 的判据必须由复核者逐条裁定，**不要**把它当成"已验证"。
+
+### 步骤 9 · 假说跑不了？走思想实验通道（可选）
+
+原则上可证伪、但当前无法执行的假说（缺干预手段、缺观测、缺对照）不必塞进 `notes/` 或硬凑一个假实验，
+按预注册规则登记即可——但它的裁决来自**论证 + 独立复核**，永远不是测量：
+
+```bash
+uv run scirearch new mechanism --kind thought-experiment \
+  -H "机制 M 是主因" -m "论证自洽性 / 与既有结论的一致性" \
+  -c "论证自洽" -c "不与既有结论冲突" \
+  -f "出现反例或与既有结论冲突即放弃" \
+  -b "缺少可控干预手段：只能观察，不能随机分配"
+```
+
+```text
+已创建预注册思想实验：experiments/exp-0002-mechanism
+判据：2 条（思想实验不由机器求值，由复核者逐条裁定）
+预注册哈希：criteria=… hypothesis.md=…
+下一步：先提交预注册（git 时序是证据）→ 在 reasoning.md 写论证 → 派独立复核者（不同 agent、不同模型）逐条裁定判据并写 review.json → …
+```
+
+1. **提交预注册**（同步骤 2），再写 `reasoning.md`：前提 / 论证 / 反例搜索 / 可测试化路径；
+2. 派 `critic`（不同 agent、不同模型）逐条裁定判据，产出 `review.json`（`critic` 只读，由你原样落盘）：
+
+```json
+{
+  "reviewer": { "agent": "critic", "model": "provider/model-x" },
+  "generator": { "agent": "hypothesizer", "model": "provider/model-y" },
+  "verdict": "rejected",
+  "rulings": [
+    { "criterion": "论证自洽", "ruling": "violated", "note": "前提 2 与前提 1 冲突" },
+    { "criterion": "不与既有结论冲突", "ruling": "unclear", "note": "文献不足以判断" }
+  ],
+  "signed_at": "2026-09-22T00:00:00Z"
+}
+```
+
+3. 收口：`status exp-0002 rejected --review experiments/exp-0002-mechanism/review.json --reason "前提自相矛盾"`；
+   或条件具备时先 `new` 一个正式实验，再 `status exp-0002 promoted --review … --superseded-by exp-0003`。
+
+红线：思想实验目录**不得出现 `metrics.json`**（`verify` 退出码 1），`rejected`/`promoted` **不得**被当成结论引用；
+`rejected` 的判据会进入负知识索引，重提前要给新论证。协议细节见
+[docs/experiment-protocol.md §2.8](experiment-protocol.md)。
 
 ---
 
@@ -311,10 +358,10 @@ uv run scirearch report --json   # 机读：criteria / inconsistencies / refuted
 | 角色 | 模型别名 | 干什么 | 何时用 |
 | --- | --- | --- | --- |
 | `scout-lit` | `@smol` | 文献/代码/数据只读侦察 | 动手前摸清现状 |
-| `hypothesizer` | `@default` | 产出可证伪假设 + 事前判据 | 把一个方向拆成 K 条竞争假设 |
+| `hypothesizer` | `@default` | 产出可证伪假设 + 事前判据（跑不了的标 `kind: thought-experiment` 并给 `blockers`） | 把一个方向拆成 K 条竞争假设 |
 | `experimenter` | `@worker` | 执行**单个**假设，产出可重跑证据（**spawn 时带 `isolated: true`**） | 实验落地 |
 | `replicator` | `@worker` | 干净工作区从零重跑，报告指标是否落在预注册判据内 | 盖章前的外部有效性检查 |
-| `critic` | `@review` | 对抗性审计（只读，禁改文件） | 结论提交前的独立复核 |
+| `critic` | `@review` | 对抗性审计（只读，禁改文件）；思想实验的 `review_rulings` 也由它产出 | 结论提交前的独立复核 |
 | `writer` | `@default` | 把已验证证据组织成报告/稿件片段（`tools` 无 `bash`/`eval`，无法自行产生数字） | 写作阶段 |
 
 ### 4.2 派活的硬约束
@@ -340,20 +387,22 @@ uv run scirearch report --json   # 机读：criteria / inconsistencies / refuted
 ## 5. 校验、汇总与写作闸门
 
 ```bash
-uv run scirearch verify              # 全部实验
+uv run scirearch verify              # 全部记录
 uv run scirearch verify --json       # 机读，供 CI 或子agent 消费
-uv run scirearch verify <实验目录>    # 单个实验
+uv run scirearch verify <实验目录>    # 单条记录
 ```
 
 | 退出码 | 含义 | 典型触发 |
 | --- | --- | --- |
 | `0` | 通过（可能有警告） | 判据自洽、证据齐全、时序可证明或不可判定 |
-| `1` | 合同非法 | 缺 seed/日志/`run.sh`、预注册哈希漂移、`preregistered` 状态下已有 `metrics.json`、指标缺失、状态非法 |
-| `2` | 判据冲突 | `completed` 却存在违反，或 `refuted` 却全部满足 |
+| `1` | 合同非法 | 缺 seed/日志/`run.sh`、预注册哈希漂移、`preregistered`/`speculative` 状态下已有 `metrics.json`、指标缺失、`review.json` 不完整、状态非法 |
+| `2` | 判据冲突 | `completed` 却存在违反、`refuted` 却全部满足，或 `rejected` 却无一条判据被裁定违反 |
 
-写作闸门：`writer` 只引用**终态且 `verify` 通过**的实验；每个数字都要能解析到 `experiments/<id>/`
-的产物（`metrics.json`、`logs/` 或 manifest）。**`verify` 通过 ≠ 结论正确**：它是完整性控制
-（合同 + 可求值判据自洽），不是独立 attestation；结论接受由独立复核者裁定。
+写作闸门：`writer` 只引用**终态且 `verify` 通过**的**实验**（`completed`/`refuted`/`inconclusive`）；
+每个数字都要能解析到 `experiments/<id>/` 的产物（`metrics.json`、`logs/` 或 manifest）。
+**思想实验不是证据**：`speculative`/`rejected`/`promoted` 只能写进开放问题或"已排除的解释"。
+**`verify` 通过 ≠ 结论正确**：它是完整性控制（合同 + 可求值判据自洽），不是独立 attestation；
+结论接受由独立复核者裁定。
 
 ---
 
@@ -371,7 +420,7 @@ uv run scirearch verify <实验目录>    # 单个实验
 | `预注册违规` 出现在"预注册与结果同一个提交" | squash 合并把两次提交压成一次 | 拆成两次提交；实验类 PR 用 merge/rebase |
 | `错误：拒绝写入状态 …：终态缺少非空原始日志（logs/ 为空）` | 终态必须有原始 stdout | 先 `bash experiments/<id>/run.sh` 产出日志再推进（证据文件不受冻结限制，可补） |
 | `错误：拒绝写入状态 …：终态缺少 seed` | `new` 时没有 `--seed`，而 seed 属于冻结的预注册记录 | 无法补登：新建实验并按原判据登记 seed，或重新预注册 |
-| `错误：拒绝写入状态 …：终态缺少 metrics.json` | `--metrics` 指向了规范路径之外的副本 | 让 `run.sh` 把指标写到 `experiments/<id>/metrics.json`（`verify` 只读该路径） |
+| `错误：--metrics 必须指向 experiments/<id>/metrics.json`（`--review` 同理） | 证据文件放在了规范路径之外 | 让 `run.sh` 把指标写到 `experiments/<id>/metrics.json`、复核记录放在 `experiments/<id>/review.json`（`verify` 只读这两个路径） |
 | `错误：拒绝写入状态 …：预注册漂移 …` | 判据/镜像/manifest 被改过 | 先撤销改动（`git checkout -- experiments/<id>`）再推进；预注册字段不可事后修改 |
 | `终态缺少非空原始日志（logs/ 为空）` / `终态缺少 seed`（来自 `verify`） | 绕过 CLI（旧版 / 手工编辑）写下的终态 | 补日志后复查；seed 缺失或判据冲突只能重建实验 |
 | `run.sh 不可执行（chmod +x run.sh）` | 权限位丢了 | `chmod +x experiments/<id>/run.sh` |
@@ -379,7 +428,18 @@ uv run scirearch verify <实验目录>    # 单个实验
 | `错误：指标文件不存在：experiments/.../metrics.json` | `--metrics` 相对 **cwd** 解析，不是相对 `--root` | 用绝对路径，或在仓库根执行命令 |
 | `非法状态转移 preregistered -> completed` | 跳步 | 先 `running`，再定终态 |
 | `非法状态转移 completed -> refuted；从 completed 只能转到：（终态，不可变更）` | 终态回退 | 终态不可回退。`status` 的写入前闸门已挡住"会被判失败的终态"，因此这种状态只可能来自绕过 CLI 的写入（旧版 / 手工编辑）→ 新建实验重做 |
-| `⚠ 负知识命中：同一判据曾在 exp-0001（refuted）被证伪` | 重提已被证伪的判据 | 允许，但必须在假设里说明**新证据**（新数据/新设计/原实验缺陷）；`experiment.json` 会记 `prior_refutations` |
+| `⚠ 负知识命中：同一判据曾在 exp-0001（refuted，实验）被否定` | 重提已被否定的判据（`refuted` 实验 / `rejected` 思想实验） | 允许，但必须在假设里说明**新证据**（新数据/新设计/原实验缺陷/新论证）；`experiment.json` 会记 `prior_refutations` |
+| `❌ 思想实验不得携带 metrics.json` | 假说其实可测量，却挂在思想实验下 | 走正式实验：`scirearch new` 建实验，再把思想实验 `promoted --superseded-by` 指向它 |
+| `错误：思想实验不得进入状态 completed；思想实验的合法状态：…` | 用实验的状态去收口思想实验 | 用 `rejected` / `promoted` / `abandoned`（反之实验也不得进入 `speculative`/`rejected`/`promoted`） |
+| `错误：进入终态 rejected 必须提供 --review（独立复核记录…）` | 思想实验终态没有复核记录 | 派 `critic`（不同 agent、不同模型）裁定后写 `experiments/<id>/review.json` |
+| `❌ 终态缺少非空论证（reasoning.md）` | `reasoning.md` 是空模板/被清空 | 先写论证（前提 / 论证 / 反例搜索 / 可测试化路径）再收口 |
+| `❌ review.json 未逐条裁定判据：缺 …` | 复核只裁定了部分判据 | 补齐 `rulings`（覆盖全部判据，多判/错文本同样失败）；判据不允许在复核阶段追加 |
+| `❌ review.json 的复核者与生成者未分离（agent 或 model 相同）` | 自证 | 换 agent **且**换模型（§4.2 第 1 条）；该字段自声明，人工复核仍不可省 |
+| `❗ 判据无一条被复核者裁定为违反却标记为 rejected` | 状态与裁定不一致 | 全部 `satisfied` 应写 `promoted`；想中止则写 `abandoned` |
+| `❌ 论证漂移：reasoning.md 的 sha256 与终态登记的哈希不一致` | 裁决后编辑了论证 | 撤销改动；要改结论只能新建记录（终态不可回退） |
+| `❌ superseded_by=exp-000X 未解析到唯一的实验目录（悬空引用）` | `promoted` 指向了不存在/不唯一的 id，或指向另一个思想实验 | 先 `scirearch new` 建正式实验，再 `--superseded-by` 指向它的 id |
+| `错误：abandoned 必须给出 --reason：…` | 放弃没有任何留痕 | 写下原因（`--reason`）；放弃不需要 metrics/日志/复核记录 |
+| `⚠️ git 时序不可判定：review.json 未提交` | 思想实验的复核记录尚未提交 | 提交后复查；CI 需 `fetch-depth: 0` |
 | `未发现实验：请先 scirearch new，或在 CI 中使用 --allow-empty` | 仓库还没有实验 | 本地先建实验；CI 已带 `--allow-empty` |
 | `data/raw 只读：拒绝对 … 的写入` | 护栏命中（正常行为） | 派生物写 `data/interim/` 或 `experiments/<id>/` |
 | `verify` 说 `history 与 status 不一致` | 有人手工改了 `status` | 用 `scirearch status` 推进；必要时重建实验目录 |
@@ -413,6 +473,11 @@ git add -A && git commit -m "experiment: <id>"
 uv run scirearch verify
 uv run scirearch report
 
+# 跑不了的假说（思想实验）：预注册 → 论证 → 独立复核 → 收口
+uv run scirearch new <slug> --kind thought-experiment -H "假设" -m "裁决依据" -c "判据" -f "证伪路径" -b "阻碍条件"
+uv run scirearch status <id> rejected --review experiments/<id>/review.json --reason "…"
+uv run scirearch status <id> promoted --review experiments/<id>/review.json --superseded-by exp-NNNN --reason "…"
+
 # Makefile
 make help | make fmt | make lint | make test | make verify | make report | make roles-check | make check
 
@@ -428,15 +493,17 @@ make roles-check      # 角色表闸门：逐角色真发一次最小请求，�
 
 | 术语 | 含义 |
 | --- | --- |
-| 预注册 | 假设、指标、判据、证伪路径、seed 在跑实验**之前**写下并冻结（三个 sha256），事后修改即违规 |
-| 判据 | 事前承诺的决策规则；可求值形式在 `metrics.json` 上三态求值（满足/违反/不可判定），自由文本由人工裁定并标 `[人工]` |
-| 负知识 | 已证伪判据按 `criteria_sha256` 进入索引；重提前必须带新证据 |
-| 时序防火墙 | 预注册提交严格早于结果提交；冻结块不得漂移（CI 以完整历史裁定） |
+| 预注册 | 假设、指标、判据、证伪路径、seed（思想实验另有 `blockers`）在跑实验/论证**之前**写下并冻结（三个 sha256），事后修改即违规 |
+| 判据 | 事前承诺的决策规则；可求值形式在 `metrics.json` 上三态求值（满足/违反/不可判定），自由文本与思想实验判据由复核者裁定并标 `[人工]` |
+| 思想实验（`thought-experiment`） | 当前无法实验的假说：证据是论证 + 独立复核，永不携带 `metrics.json`，不构成经验证据 |
+| 负知识 | 被否定的判据（`refuted` 实验 / `rejected` 思想实验）按 `criteria_sha256` 进入索引；重提前必须带新证据 |
+| 时序防火墙 | 预注册提交严格早于结果提交（实验=`metrics.json`、思想实验=`review.json`）；冻结块不得漂移（CI 以完整历史裁定） |
 | 完整性控制 ≠ attestation | `verify` 证明合同与判据自洽，不证明结论正确；接受与否由独立复核裁定 |
 | 隔离工作区 | `isolated: true` 的 spawn：子agent 在独立 git 工作区执行，结果经 merge 成为证据 |
 
-不变量（任何环节都不得违反）：判据先于结果、预注册创建即冻结、终态必须有 seed 与非空原始日志、
-终态不可回退、生成与复核分离、负结果同等留痕、`data/raw/` 只读。
+不变量（任何环节都不得违反）：判据先于结果、预注册创建即冻结、实验终态必须有 seed 与非空原始日志、
+思想实验终态必须有非空论证与独立复核记录且永不携带 `metrics.json`、状态不跨类型、终态不可回退、
+生成与复核分离、负结果同等留痕、`data/raw/` 只读。
 
 需要更细的规则时读：[experiment-protocol.md](experiment-protocol.md)（协议全文）、
 [architecture.md](architecture.md)（分层与取舍）、[../experiments/README.md](../experiments/README.md)（实验目录）、

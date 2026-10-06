@@ -17,12 +17,14 @@ make check             # = ruff format --check + ruff check + pytest + scirearch
 
 `make fmt` 可直接修复格式问题。实验类改动额外要求：
 
-- 判据先于结果（`preregistered` 状态下不得存在 `metrics.json`）。
-- 预注册（判据 / `hypothesis.md` / 证伪路径）创建后未被编辑（sha256 冻结）。
-- **预注册提交严格早于结果提交**；实验类 PR 用 merge commit / rebase 合并，不要 squash。
+- 判据先于结果（`preregistered` / `speculative` 状态下不得存在 `metrics.json`）。
+- 预注册（判据 / `hypothesis.md` / 证伪路径 / `blockers`）创建后未被编辑（sha256 冻结）。
+- **预注册提交严格早于结果提交**（实验=`metrics.json`、思想实验=`review.json`）；实验类 PR 用 merge commit / rebase 合并，不要 squash。
 - `seed` 已登记，`logs/` 含非空原始日志，`run.sh` 可执行。
 - 未手工编辑 `metrics.json`。
-- 文档/稿件中的数字可解析到实验产物。
+- 思想实验改动：`blockers` 写清了阻碍条件；`review.json` 逐条覆盖全部判据且 `reviewer`/`generator` 不同 agent 且不同模型；
+  `promoted` 指向真实存在的 `kind=experiment` 记录；终态后 `reasoning.md` 未被编辑（sha256 冻结）。
+- 文档/稿件中的数字可解析到实验产物；思想实验不得被写成结论。
 
 ## 变更类型与要求
 
