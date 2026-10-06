@@ -17,11 +17,17 @@ from typing import Any
 
 from scirearch.criteria import normalize as normalize_criterion
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 EXPERIMENTS_DIRNAME = "experiments"
 ID_PREFIX = "exp"
 ID_WIDTH = 4
 PREREGISTRATION_ALGORITHM = "sha256"
+
+# 两类记录：可执行实验（由 metrics.json 裁决）与思想实验（由论证 + 独立复核裁定）。
+KIND_EXPERIMENT = "experiment"
+KIND_THOUGHT = "thought-experiment"
+ALL_KINDS = (KIND_EXPERIMENT, KIND_THOUGHT)
+KIND_LABELS = {KIND_EXPERIMENT: "实验", KIND_THOUGHT: "思想实验"}
 
 STATUS_PREREGISTERED = "preregistered"
 STATUS_RUNNING = "running"
@@ -29,13 +35,33 @@ STATUS_COMPLETED = "completed"
 STATUS_REFUTED = "refuted"
 STATUS_INCONCLUSIVE = "inconclusive"
 STATUS_ABANDONED = "abandoned"
-TERMINAL_STATUSES = frozenset(
-    {STATUS_COMPLETED, STATUS_REFUTED, STATUS_INCONCLUSIVE, STATUS_ABANDONED}
-)
-ALL_STATUSES = frozenset({STATUS_PREREGISTERED, STATUS_RUNNING}) | TERMINAL_STATUSES
+STATUS_SPECULATIVE = "speculative"
+STATUS_REJECTED = "rejected"
+STATUS_PROMOTED = "promoted"
+
+# 经验终态：必须有 metrics.json + 非空 logs/ + seed 才能写入。
+EVIDENCE_STATUSES = frozenset({STATUS_COMPLETED, STATUS_REFUTED, STATUS_INCONCLUSIVE})
+# 思想实验终态：必须有非空 reasoning.md + 独立复核记录 review.json。
+REVIEW_STATUSES = frozenset({STATUS_REJECTED, STATUS_PROMOTED})
+TERMINAL_STATUSES = EVIDENCE_STATUSES | REVIEW_STATUSES | {STATUS_ABANDONED}
+INITIAL_STATUSES = {KIND_EXPERIMENT: STATUS_PREREGISTERED, KIND_THOUGHT: STATUS_SPECULATIVE}
+KIND_STATUSES: dict[str, frozenset[str]] = {
+    KIND_EXPERIMENT: frozenset({STATUS_PREREGISTERED, STATUS_RUNNING, STATUS_ABANDONED})
+    | EVIDENCE_STATUSES,
+    KIND_THOUGHT: frozenset({STATUS_SPECULATIVE, STATUS_ABANDONED}) | REVIEW_STATUSES,
+}
+ALL_STATUSES = frozenset().union(*KIND_STATUSES.values())
+# 负知识来源：被判 refuted 的实验与被判 rejected 的思想实验（同一判据重提前必须给出新证据）。
+PRIOR_KNOWLEDGE_STATUSES = frozenset({STATUS_REFUTED, STATUS_REJECTED})
+# git 时序防火墙登记的"结果"文件：实验是指标，思想实验是复核记录。
+METRICS_FILENAME = "metrics.json"
+RESULT_FILENAMES = {KIND_EXPERIMENT: METRICS_FILENAME, KIND_THOUGHT: "review.json"}
+REASONING_FILENAME = "reasoning.md"
+REVIEW_FILENAME = "review.json"
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     STATUS_PREREGISTERED: frozenset({STATUS_RUNNING, STATUS_ABANDONED}),
-    STATUS_RUNNING: frozenset(TERMINAL_STATUSES),
+    STATUS_RUNNING: frozenset(EVIDENCE_STATUSES | {STATUS_ABANDONED}),
+    STATUS_SPECULATIVE: frozenset(REVIEW_STATUSES | {STATUS_ABANDONED}),
     **dict.fromkeys(sorted(TERMINAL_STATUSES), frozenset()),
 }
 
@@ -43,6 +69,7 @@ REQUIRED_MANIFEST_KEYS = (
     "schema_version",
     "id",
     "slug",
+    "kind",
     "hypothesis",
     "metric",
     "criteria",
@@ -55,6 +82,7 @@ REQUIRED_MANIFEST_KEYS = (
 )
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+_EXPERIMENT_ID_RE = re.compile(rf"{ID_PREFIX}-\d+")
 
 RUN_SH_TEMPLATE = """#!/usr/bin/env bash
 # 可重跑入口（{experiment_id}）。
@@ -106,6 +134,61 @@ SEED={seed} bash run.sh
 ```
 
 原始输出在 `logs/`，指标在 `metrics.json`；汇总与判据判定见 `scirearch report`。
+"""
+
+HYPOTHESIS_TEMPLATE_THOUGHT = """# {experiment_id} · {slug}
+
+> 状态：`speculative`（思想实验）｜ 由 `scirearch new` 生成，**创建后不可编辑**（sha256 已登记在
+> `experiment.json.preregistration`；改动即判为预注册违规）。
+> 判据、证伪路径与阻碍条件必须在论证之前写好。
+
+## 假设
+
+{hypothesis}
+
+## 裁决依据
+
+`{metric}`
+
+## 判据（事前承诺）
+
+{criteria}
+
+## 证伪路径
+
+{falsification}
+
+## 阻碍实验的条件
+
+{blockers}
+
+## 裁决方式
+
+- 论证、反例搜索与可测试化路径写入 `reasoning.md`；终态时其 sha256 被冻结进
+  `experiment.json.history`，此后编辑会被 `verify` 判为漂移；
+- 独立复核者（不同 agent、不同模型）逐条裁定判据，结果写入 `review.json`；
+- 驳回：`scirearch status {experiment_id} rejected --review <path> --reason "..."`；
+- 转成正式实验：先 `scirearch new` 建实验，再
+  `scirearch status {experiment_id} promoted --review <path> --superseded-by exp-NNNN`；
+- 本目录**不得出现 `metrics.json`**：思想实验不携带经验证据，判据不由机器求值。
+"""
+
+REASONING_TEMPLATE = """# {experiment_id} · 论证（思想实验）
+
+> 这是本记录的"执行"产物：论证、反例搜索与可测试化路径。终态（`rejected` / `promoted`）时其内容被
+> sha256 冻结进 `experiment.json.history`，此后编辑即判为漂移。
+
+## 前提（逐条列出可争议之处）
+
+-
+
+## 论证
+
+## 反例搜索（主动尝试推翻自己）
+
+## 可测试化路径（条件具备时的最小判别实验）
+
+## 本阶段认识（不是经验结论）
 """
 
 
@@ -187,13 +270,17 @@ def preregistration_record_sha256(
     criteria: list[str],
     falsification: str,
     seed: int | None,
+    kind: str = KIND_EXPERIMENT,
+    blockers: str | None = None,
 ) -> str:
-    """机读预注册记录的规范哈希：覆盖假设、指标、判据、证伪路径与 seed。"""
+    """机读预注册记录的规范哈希：覆盖类型、假设、指标/裁决依据、判据、证伪路径、阻碍条件与 seed。"""
     record = {
+        "kind": kind,
         "hypothesis": hypothesis.strip(),
         "metric": metric.strip(),
         "criteria": [normalize_criterion(c) for c in criteria],
         "falsification": falsification.strip(),
+        "blockers": (blockers or "").strip(),
         "seed": seed,
     }
     payload = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -208,6 +295,8 @@ def preregistration_block(
     falsification: str,
     seed: int | None,
     hypothesis_md: str,
+    kind: str = KIND_EXPERIMENT,
+    blockers: str | None = None,
 ) -> dict[str, Any]:
     """构造 manifest 的 `preregistration` 块（三个哈希各司其职，见实验协议文档）。"""
     return {
@@ -215,17 +304,35 @@ def preregistration_block(
         "criteria_sha256": criteria_sha256(criteria),
         "hypothesis_md_sha256": canonical_text_sha256(hypothesis_md),
         "record_sha256": preregistration_record_sha256(
+            kind=kind,
             hypothesis=hypothesis,
             metric=metric,
             criteria=criteria,
             falsification=falsification,
+            blockers=blockers,
             seed=seed,
         ),
     }
 
 
+def has_text_content(path: Path) -> bool:
+    """文件存在且含非空白内容（论证、日志一类"执行"产物的存在性判据）。"""
+    try:
+        return bool(path.read_text(encoding="utf-8").strip())
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def find_experiment_dir(base: Path, experiment_id: str) -> Path | None:
+    """按 id 在 `experiments/` 下查找目录；id 非法、缺失或多义（同 id 多个目录）时返回 None。"""
+    if not _EXPERIMENT_ID_RE.fullmatch(experiment_id):
+        return None
+    matches = sorted(p for p in base.glob(f"{experiment_id}-*") if p.is_dir())
+    return matches[0] if len(matches) == 1 else None
+
+
 def find_prior_refutations(root: Path, criteria_hash: str) -> list[str]:
-    """负知识查询：返回判据哈希相同且已判 `refuted` 的历史实验 id。"""
+    """负知识查询：返回判据哈希相同且已被否定（`refuted` / `rejected`）的历史记录 id。"""
     hits: list[str] = []
     for child in sorted(experiments_dir(root).glob(f"{ID_PREFIX}-*")):
         if not child.is_dir():
@@ -234,7 +341,7 @@ def find_prior_refutations(root: Path, criteria_hash: str) -> list[str]:
             manifest = load_manifest(child)
         except ExperimentError:
             continue
-        if manifest.get("status") != STATUS_REFUTED:
+        if manifest.get("status") not in PRIOR_KNOWLEDGE_STATUSES:
             continue
         block = manifest.get("preregistration")
         if isinstance(block, dict) and block.get("criteria_sha256") == criteria_hash:
@@ -275,11 +382,17 @@ def create_experiment(
     falsification: str,
     seed: int | None = None,
     run_cmd: str | None = None,
+    kind: str = KIND_EXPERIMENT,
+    blockers: str | None = None,
 ) -> Path:
-    """创建预注册实验目录（manifest + hypothesis.md + run.sh），返回其路径。"""
+    """创建预注册记录（manifest + hypothesis.md + run.sh 或 reasoning.md），返回其路径。"""
+    if kind not in ALL_KINDS:
+        raise ExperimentError(f"未知类型 {kind!r}；只允许：{', '.join(ALL_KINDS)}")
     clean_criteria = [c.strip() for c in criteria if c and c.strip()]
     if not clean_criteria:
         raise ExperimentError("至少需要一条判据；判据必须在跑实验之前给出。")
+    if len({normalize_criterion(c) for c in clean_criteria}) != len(clean_criteria):
+        raise ExperimentError("判据重复（空白折叠后相同）：每条判据必须互异。")
     if not hypothesis.strip():
         raise ExperimentError("假设不能为空。")
     if not metric.strip():
@@ -288,78 +401,120 @@ def create_experiment(
         raise ExperimentError("证伪路径不能为空：先写下什么结果会让你放弃该假设，再创建实验。")
     if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
         raise ExperimentError("seed 必须是整数。")
+    clean_blockers = (blockers or "").strip()
+    if kind == KIND_THOUGHT:
+        if not clean_blockers:
+            raise ExperimentError(
+                "思想实验必须给出阻碍条件（--blockers）：写清什么条件缺失使它现在无法实验。"
+            )
+        if seed is not None:
+            raise ExperimentError("思想实验不接受 --seed：seed 只属于可执行实验。")
+        if run_cmd is not None:
+            raise ExperimentError("思想实验不接受 --run-cmd：它没有可重跑入口。")
+    elif clean_blockers:
+        raise ExperimentError(
+            "--blockers 只属于思想实验（kind=thought-experiment）：可执行实验的证据由 run.sh 产出。"
+        )
 
     experiment_id = next_experiment_id(root)
     exp_dir = experiments_dir(root) / f"{experiment_id}-{slugify(slug)}"
     if exp_dir.exists():
         raise ExperimentError(f"实验目录已存在：{exp_dir}")
 
-    hypothesis_md = HYPOTHESIS_TEMPLATE.format(
-        experiment_id=experiment_id,
-        slug=exp_dir.name.removeprefix(f"{experiment_id}-"),
-        hypothesis=hypothesis.strip(),
-        metric=metric.strip(),
-        criteria="\n".join(f"- [ ] {c}" for c in clean_criteria),
-        falsification=falsification.strip(),
-        seed=seed if seed is not None else "<待定>",
-    )
+    slug_value = exp_dir.name.removeprefix(f"{experiment_id}-")
+    if kind == KIND_THOUGHT:
+        hypothesis_md = HYPOTHESIS_TEMPLATE_THOUGHT.format(
+            experiment_id=experiment_id,
+            slug=slug_value,
+            hypothesis=hypothesis.strip(),
+            metric=metric.strip(),
+            criteria="\n".join(f"- [ ] {c}" for c in clean_criteria),
+            falsification=falsification.strip(),
+            blockers=clean_blockers,
+        )
+    else:
+        hypothesis_md = HYPOTHESIS_TEMPLATE.format(
+            experiment_id=experiment_id,
+            slug=slug_value,
+            hypothesis=hypothesis.strip(),
+            metric=metric.strip(),
+            criteria="\n".join(f"- [ ] {c}" for c in clean_criteria),
+            falsification=falsification.strip(),
+            seed=seed if seed is not None else "<待定>",
+        )
     block = preregistration_block(
+        kind=kind,
         hypothesis=hypothesis,
         metric=metric,
         criteria=clean_criteria,
         falsification=falsification,
+        blockers=clean_blockers or None,
         seed=seed,
         hypothesis_md=hypothesis_md,
     )
     prior_refutations = find_prior_refutations(root, str(block["criteria_sha256"]))
 
+    initial_status = INITIAL_STATUSES[kind]
     manifest: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "id": experiment_id,
-        "slug": exp_dir.name.removeprefix(f"{experiment_id}-"),
+        "slug": slug_value,
+        "kind": kind,
         "hypothesis": hypothesis.strip(),
         "metric": metric.strip(),
         "criteria": clean_criteria,
         "falsification": falsification.strip(),
         "seed": seed,
-        "status": STATUS_PREREGISTERED,
+        "status": initial_status,
         "created_at": utc_now(),
         "git_commit": git_commit(root),
         "preregistration": block,
         "history": [
-            {"status": STATUS_PREREGISTERED, "at": utc_now(), "reason": "预注册", "actor": "cli"}
+            {
+                "status": initial_status,
+                "at": utc_now(),
+                "reason": "预注册",
+                "actor": "cli",
+            }
         ],
     }
+    if kind == KIND_THOUGHT:
+        manifest["blockers"] = clean_blockers
     if prior_refutations:
         manifest["prior_refutations"] = prior_refutations
 
     exp_dir.mkdir(parents=True)
     save_manifest(exp_dir, manifest)
     (exp_dir / "hypothesis.md").write_text(hypothesis_md, encoding="utf-8")
-    run_sh = exp_dir / "run.sh"
-    run_sh.write_text(
-        RUN_SH_TEMPLATE.format(
-            experiment_id=experiment_id,
-            seed=seed if seed is not None else 0,
-            default_run=run_cmd or "python -m your_module.train --seed ${SEED}",
-        ),
-        encoding="utf-8",
-    )
-    run_sh.chmod(0o755)
+    if kind == KIND_THOUGHT:
+        (exp_dir / REASONING_FILENAME).write_text(
+            REASONING_TEMPLATE.format(experiment_id=experiment_id), encoding="utf-8"
+        )
+    else:
+        run_sh = exp_dir / "run.sh"
+        run_sh.write_text(
+            RUN_SH_TEMPLATE.format(
+                experiment_id=experiment_id,
+                seed=seed if seed is not None else 0,
+                default_run=run_cmd or "python -m your_module.train --seed ${SEED}",
+            ),
+            encoding="utf-8",
+        )
+        run_sh.chmod(0o755)
     return exp_dir
 
 
-def _reject_unverifiable_status(exp_dir: Path, new_status: str) -> None:
+def _reject_unverifiable_status(exp_dir: Path, new_status: str, pending: dict[str, Any]) -> None:
     """写入前模拟目标状态：任何会被 `scirearch verify` 判失败的推进都拒绝。
 
     终态不可回退，所以"先写状态、再回显问题"会把实验永久钉在一个不合法的状态上
-    （既无法通过 verify，也无法改判 refuted/inconclusive）。
+    （既无法通过 verify，也无法改判 refuted/inconclusive/rejected）。
 
     延迟导入是刻意的：`verify` 依赖本模块，模块级导入会成环。
     """
     from scirearch.verify import check_experiment
 
-    result = check_experiment(exp_dir, pending_status=new_status)
+    result = check_experiment(exp_dir, pending=pending)
     if result.inconsistencies or result.problems:
         raise StatusRejected(
             new_status,
@@ -399,11 +554,27 @@ def set_status(
     *,
     reason: str | None = None,
     metrics_path: Path | None = None,
+    review_path: Path | None = None,
+    superseded_by: str | None = None,
 ) -> dict[str, Any]:
-    """推进实验状态；非法转移或缺少必要证据时抛 ExperimentError。"""
+    """推进记录状态；非法转移或缺少必要证据时抛 ExperimentError。
+
+    - 实验终态（`completed` / `refuted` / `inconclusive`）：需要 `--metrics`；
+    - 思想实验终态（`rejected` / `promoted`）：需要 `--review` 与非空 `reasoning.md`，
+      且禁止 `metrics.json`（思想实验不携带经验证据）；
+    - `abandoned`：只需要 `--reason`（放弃不产出结论，也不构成证据）。
+    """
     if new_status not in ALL_STATUSES:
         raise ExperimentError(f"未知状态 {new_status!r}；可用：{', '.join(sorted(ALL_STATUSES))}")
     manifest = load_manifest(exp_dir)
+    kind = manifest.get("kind")
+    if kind not in ALL_KINDS:
+        raise ExperimentError(f"manifest 的 kind 非法：{kind!r}；只允许：{', '.join(ALL_KINDS)}")
+    if new_status not in KIND_STATUSES[kind]:
+        raise ExperimentError(
+            f"{KIND_LABELS[kind]}不得进入状态 {new_status}；"
+            f"{KIND_LABELS[kind]}的合法状态：{', '.join(sorted(KIND_STATUSES[kind]))}"
+        )
     current = manifest.get("status")
     allowed = ALLOWED_TRANSITIONS.get(str(current), frozenset())
     if new_status not in allowed:
@@ -411,24 +582,89 @@ def set_status(
             f"非法状态转移 {current} -> {new_status}；"
             f"从 {current} 只能转到：{', '.join(sorted(allowed)) or '（终态，不可变更）'}"
         )
-    if new_status in TERMINAL_STATUSES:
+    clean_superseded = (superseded_by or "").strip()
+    entry: dict[str, Any] = {"status": new_status, "at": utc_now(), "actor": "cli"}
+    if reason:
+        entry["reason"] = reason
+    if new_status in EVIDENCE_STATUSES:
+        if review_path is not None or clean_superseded:
+            raise ExperimentError(f"{new_status} 不接受 --review / --superseded-by。")
         if metrics_path is None:
             raise ExperimentError(f"进入终态 {new_status} 必须提供 --metrics（可解析的指标文件）。")
+        canonical_metrics = exp_dir / METRICS_FILENAME
+        if metrics_path.resolve() != canonical_metrics.resolve():
+            raise ExperimentError(
+                f"--metrics 必须指向 {canonical_metrics}（verify 只读规范路径，"
+                f"当前指向 {metrics_path}）。"
+            )
         if not metrics_path.is_file():
             raise ExperimentError(f"指标文件不存在：{metrics_path}")
         try:
             metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ExperimentError(
+                f"指标文件不可读：{metrics_path}（{type(exc).__name__}）"
+            ) from exc
         except json.JSONDecodeError as exc:
             raise ExperimentError(f"指标文件不是合法 JSON：{metrics_path}（{exc}）") from exc
         if not isinstance(metrics, dict) or not metrics:
             raise ExperimentError(f"指标文件必须是非空 JSON 对象：{metrics_path}")
-    _reject_unverifiable_status(exp_dir, new_status)
-    entry: dict[str, Any] = {"status": new_status, "at": utc_now(), "actor": "cli"}
-    if reason:
-        entry["reason"] = reason
-    if metrics_path is not None:
         entry["metrics"] = str(metrics_path)
+    elif new_status in REVIEW_STATUSES:
+        if metrics_path is not None:
+            raise ExperimentError(
+                f"{KIND_LABELS[kind]}不得提供 --metrics：思想实验不携带经验证据；"
+                "若已有可测量指标，请 `scirearch new` 建正式实验并 promote 到它。"
+            )
+        if review_path is None:
+            raise ExperimentError(
+                f"进入终态 {new_status} 必须提供 --review（独立复核记录，路径为 "
+                f"experiments/<id>/{REVIEW_FILENAME}）。"
+            )
+        if not review_path.is_file():
+            raise ExperimentError(f"复核记录不存在：{review_path}")
+        canonical_review = exp_dir / REVIEW_FILENAME
+        if review_path.resolve() != canonical_review.resolve():
+            raise ExperimentError(
+                f"--review 必须指向 {canonical_review}（verify 只读规范路径，"
+                f"当前指向 {review_path}）。"
+            )
+        try:
+            review = json.loads(review_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ExperimentError(f"复核记录不可读：{review_path}（{type(exc).__name__}）") from exc
+        except json.JSONDecodeError as exc:
+            raise ExperimentError(f"复核记录不是合法 JSON：{review_path}（{exc}）") from exc
+        if not isinstance(review, dict) or not review:
+            raise ExperimentError(f"复核记录必须是非空 JSON 对象：{review_path}")
+        reasoning = exp_dir / REASONING_FILENAME
+        if not has_text_content(reasoning):
+            raise ExperimentError(f"缺少非空论证：{reasoning}（先写论证，再由复核者裁定）")
+        entry["review"] = str(review_path)
+        entry["reasoning_sha256"] = canonical_text_sha256(reasoning.read_text(encoding="utf-8"))
+        if new_status == STATUS_PROMOTED:
+            if not clean_superseded:
+                raise ExperimentError(
+                    "promoted 必须提供 --superseded-by（转成的正式实验 id，如 exp-0002）。"
+                )
+        elif clean_superseded:
+            raise ExperimentError("--superseded-by 只用于 promoted。")
+    elif new_status == STATUS_ABANDONED:
+        if metrics_path is not None or review_path is not None or clean_superseded:
+            raise ExperimentError("abandoned 只接受 --reason：放弃不产出结论，无需其他证据。")
+        if not (reason or "").strip():
+            raise ExperimentError("abandoned 必须给出 --reason：写下放弃的原因（同样要留痕）。")
+
+    pending: dict[str, Any] = {
+        "status": new_status,
+        "history": [*manifest.get("history", []), entry],
+    }
+    if new_status == STATUS_PROMOTED:
+        pending["superseded_by"] = clean_superseded
+    _reject_unverifiable_status(exp_dir, new_status, pending)
     manifest["status"] = new_status
     manifest.setdefault("history", []).append(entry)
+    if new_status == STATUS_PROMOTED:
+        manifest["superseded_by"] = clean_superseded
     save_manifest(exp_dir, manifest)
     return manifest

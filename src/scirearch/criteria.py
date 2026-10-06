@@ -24,6 +24,7 @@ DECIDED_BY_MACHINE = "machine"
 DECIDED_BY_HUMAN = "human"
 
 REASON_FREE_TEXT = "free_text"
+REASON_REVIEW = "review"
 REASON_MISSING_METRIC = "missing_metric"
 REASON_NON_NUMERIC = "non_numeric"
 

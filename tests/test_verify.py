@@ -17,7 +17,7 @@ from scirearch.verify import (
     EXIT_PASS,
     check_experiment,
     exit_code,
-    refuted_index,
+    negative_index,
     render_report,
     verify_tree,
 )
@@ -277,12 +277,12 @@ def test_negative_index_binds_refuted_criteria_to_experiment(tmp_path: Path) -> 
     _run_to_terminal(refuted, "refuted", metrics={"std": 0.42})
 
     results = verify_tree(tmp_path)
-    index = refuted_index(results)
+    index = negative_index(results)
     report = render_report(results)
 
     assert [entry["id"] for entry in index] == ["exp-0001"]
     assert index[0]["criteria_sha256"] == check_experiment(refuted).criteria_sha256
-    assert "负知识索引（已证伪判据）" in report
+    assert "负知识索引（被否定的判据）" in report
     assert "重提前需给出新证据" in report
 
 
@@ -296,12 +296,12 @@ def test_verify_tree_and_report_cover_all_experiments(tmp_path: Path) -> None:
     report = render_report(results)
 
     assert [r.id for r in results] == ["exp-0001", "exp-0002"]
-    assert "共 2 个实验：1 通过 / 1 失败" in report
-    assert "| exp-0001 good | completed | 1 满足 | 1729 | metrics+1log |" in report
+    assert "共 2 条记录：1 通过 / 1 失败" in report
+    assert "| exp-0001 good | 实验 | completed | 1 满足 | 1729 | metrics+1log |" in report
     assert "exp-0002: 缺少可重跑入口 run.sh" in report
     assert "不是自动 attestation" in report
 
 
 def test_verify_tree_is_empty_for_fresh_repo(tmp_path: Path) -> None:
     assert verify_tree(tmp_path) == []
-    assert render_report([]) == "无实验。\n"
+    assert render_report([]) == "无记录。\n"

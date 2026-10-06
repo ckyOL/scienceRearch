@@ -213,7 +213,7 @@ def test_status_requires_metrics_at_the_canonical_path(tmp_path: Path, capsys) -
     )
 
     assert code == 1
-    assert "终态缺少 metrics.json" in capsys.readouterr().err
+    assert "--metrics 必须指向" in capsys.readouterr().err
     assert load_manifest(exp_dir)["status"] == "running"
 
 
@@ -226,8 +226,8 @@ def test_report_json_lists_experiments_and_negative_knowledge(tmp_path: Path, ca
     assert main(["--root", str(tmp_path), "report", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["count"] == 1
-    assert payload["experiments"][0]["slug"] == "baseline"
-    assert payload["refuted_index"][0]["id"] == "exp-0001"
+    assert payload["records"][0]["slug"] == "baseline"
+    assert payload["negative_index"][0]["id"] == "exp-0001"
     assert "attestation" in payload["notice"]
 
 

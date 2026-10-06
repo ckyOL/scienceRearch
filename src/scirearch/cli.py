@@ -9,15 +9,18 @@ from pathlib import Path
 
 from scirearch.criteria import parse as parse_criterion
 from scirearch.experiment import (
+    ALL_KINDS,
     ALL_STATUSES,
     EXPERIMENTS_DIRNAME,
-    STATUS_ABANDONED,
-    STATUS_COMPLETED,
-    STATUS_INCONCLUSIVE,
-    STATUS_REFUTED,
+    KIND_EXPERIMENT,
+    KIND_LABELS,
+    KIND_THOUGHT,
+    REVIEW_FILENAME,
     ExperimentError,
     StatusRejected,
     create_experiment,
+    experiments_dir,
+    find_experiment_dir,
     load_manifest,
     resolve_experiment,
     set_status,
@@ -27,14 +30,12 @@ from scirearch.verify import (
     EXIT_CRITERIA_CONFLICT,
     check_experiment,
     exit_code,
-    refuted_index,
+    negative_index,
     render_report,
     verify_tree,
 )
 
 __version__ = "0.1.0"
-
-TERMINAL_STATUSES_LABEL = {STATUS_COMPLETED, STATUS_REFUTED, STATUS_INCONCLUSIVE, STATUS_ABANDONED}
 
 
 def find_root(start: Path) -> Path:
@@ -65,11 +66,23 @@ def build_parser() -> argparse.ArgumentParser:
     _add_root(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    new = sub.add_parser("new", help="创建预注册实验")
+    new = sub.add_parser("new", help="创建预注册记录（实验或思想实验）")
     _add_root(new)
     new.add_argument("slug", help="实验短标识（小写下划线/连字符）")
+    new.add_argument(
+        "--kind",
+        choices=list(ALL_KINDS),
+        default=KIND_EXPERIMENT,
+        help="experiment=可执行实验（需 run.sh 与 metrics.json 裁决）；"
+        "thought-experiment=思想实验（暂无法实验：需 --blockers，由论证 + 独立复核裁定）",
+    )
     new.add_argument("-H", "--hypothesis", required=True, help="可证伪的假设")
-    new.add_argument("-m", "--metric", required=True, help="裁决用的单一指标")
+    new.add_argument(
+        "-m",
+        "--metric",
+        required=True,
+        help="裁决依据（实验=单一指标；思想实验=论证所依据的材料）",
+    )
     new.add_argument(
         "-c",
         "--criteria",
@@ -84,10 +97,16 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="证伪路径：什么结果会让你放弃该假设（随预注册冻结）",
     )
-    new.add_argument("--seed", type=int, default=None, help="随机种子")
+    new.add_argument(
+        "-b",
+        "--blockers",
+        default=None,
+        help="思想实验必填：什么条件缺失使它现在无法实验（随预注册冻结）",
+    )
+    new.add_argument("--seed", type=int, default=None, help="随机种子（只用于可执行实验）")
     new.add_argument("--run-cmd", default=None, help="写入 run.sh 的默认命令")
 
-    status = sub.add_parser("status", help="推进实验状态（会被 verify 判失败的推进直接拒绝）")
+    status = sub.add_parser("status", help="推进记录状态（会被 verify 判失败的推进直接拒绝）")
     _add_root(status)
     status.add_argument("experiment", help="实验目录或 exp-NNNN 前缀")
     status.add_argument("status", choices=sorted(ALL_STATUSES), help="目标状态")
@@ -95,9 +114,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--metrics",
         type=Path,
         default=None,
-        help="终态必需的指标文件；必须是 experiments/<id>/metrics.json（verify 只读该路径）",
+        help="实验终态（completed/refuted/inconclusive）必需的指标文件；"
+        "必须是 experiments/<id>/metrics.json（verify 只读该路径）",
     )
-    status.add_argument("--reason", default=None, help="变更原因（写入 history）")
+    status.add_argument(
+        "--review",
+        type=Path,
+        default=None,
+        help="思想实验终态（rejected/promoted）必需的独立复核记录；"
+        f"必须是 experiments/<id>/{REVIEW_FILENAME}",
+    )
+    status.add_argument(
+        "--superseded-by",
+        default=None,
+        help="promoted 专用：转成的正式实验 id（如 exp-0002）",
+    )
+    status.add_argument("--reason", default=None, help="变更原因（写入 history；abandoned 必填）")
 
     verify = sub.add_parser("verify", help="校验实验合同")
     _add_root(verify)
@@ -115,6 +147,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _describe_prior(root: Path, prior_id: str) -> str:
+    """把负知识命中渲染成「id（状态，类型）」；记录缺失时退化为裸 id。"""
+    exp_dir = find_experiment_dir(experiments_dir(root), prior_id)
+    if exp_dir is None:
+        return prior_id
+    try:
+        manifest = load_manifest(exp_dir)
+    except ExperimentError:
+        return prior_id
+    kind = str(manifest.get("kind", KIND_EXPERIMENT))
+    return f"{prior_id}（{manifest.get('status', '?')}，{KIND_LABELS.get(kind, kind)}）"
+
+
 def _cmd_new(args: argparse.Namespace, root: Path) -> int:
     exp_dir = create_experiment(
         root,
@@ -125,24 +170,42 @@ def _cmd_new(args: argparse.Namespace, root: Path) -> int:
         falsification=args.falsification,
         seed=args.seed,
         run_cmd=args.run_cmd,
+        kind=args.kind,
+        blockers=args.blockers,
     )
     manifest = load_manifest(exp_dir)
+    kind = str(manifest.get("kind", KIND_EXPERIMENT))
     criteria_list = [c for c in manifest.get("criteria", []) if isinstance(c, str)]
     decidable = sum(1 for c in criteria_list if parse_criterion(c) is not None)
     free_text = len(criteria_list) - decidable
     block = manifest.get("preregistration", {})
-    print(f"已创建预注册实验：{exp_dir.relative_to(root)}")
-    print(f"判据：{decidable} 条机器可判定 / {free_text} 条自由文本（自由文本由复核者人工裁定）")
+    print(f"已创建预注册{KIND_LABELS.get(kind, kind)}：{exp_dir.relative_to(root)}")
+    if kind == KIND_THOUGHT:
+        print(f"判据：{len(criteria_list)} 条（思想实验不由机器求值，由复核者逐条裁定）")
+    else:
+        print(
+            f"判据：{decidable} 条机器可判定 / {free_text} 条自由文本（自由文本由复核者人工裁定）"
+        )
     if isinstance(block, dict):
         criteria_hash = str(block.get("criteria_sha256", ""))[:12]
         mirror_hash = str(block.get("hypothesis_md_sha256", ""))[:12]
         print(f"预注册哈希：criteria={criteria_hash}… hypothesis.md={mirror_hash}…")
     for prior in manifest.get("prior_refutations", []):
         print(
-            f"⚠ 负知识命中：同一判据曾在 {prior}（refuted）被证伪；重提前请在假设中说明新证据。",
+            f"⚠ 负知识命中：同一判据曾在 {_describe_prior(root, prior)} 被否定；"
+            "重提前必须给出新证据。",
             file=sys.stderr,
         )
-    print("下一步：先提交预注册（git 时序是证据）→ 编辑 run.sh 的 RUN= 一行 → 执行")
+    if kind == KIND_THOUGHT:
+        print(
+            "下一步：先提交预注册（git 时序是证据）→ 在 reasoning.md 写论证 → "
+            "派独立复核者（不同 agent、不同模型）逐条裁定判据并写 "
+            f"{REVIEW_FILENAME} → "
+            f"`scirearch status {manifest.get('id')} rejected --review "
+            f'experiments/<id>/{REVIEW_FILENAME} --reason "..."`'
+        )
+    else:
+        print("下一步：先提交预注册（git 时序是证据）→ 编辑 run.sh 的 RUN= 一行 → 执行")
     return 0
 
 
@@ -153,6 +216,8 @@ def _cmd_status(args: argparse.Namespace, root: Path) -> int:
         args.status,
         reason=args.reason,
         metrics_path=args.metrics,
+        review_path=args.review,
+        superseded_by=args.superseded_by,
     )
     print(f"{manifest['id']}：{manifest['status']}（已写入 history）")
     # 状态已按合同写入；此处只回显不阻断的不可判定项（git 时序等）。
@@ -193,8 +258,8 @@ def _cmd_report(args: argparse.Namespace, root: Path) -> int:
             json.dumps(
                 {
                     "count": len(results),
-                    "experiments": [r.to_dict() for r in results],
-                    "refuted_index": refuted_index(results),
+                    "records": [r.to_dict() for r in results],
+                    "negative_index": negative_index(results),
                     "notice": "机器判定 = 合同 + 可求值判据（完整性控制，非独立 attestation）；"
                     "自由文本判据与结论接受由独立复核裁定。",
                 },
